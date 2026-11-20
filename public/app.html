@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="/css/app.css?v=20261118-wallet-selects">
+    <link rel="stylesheet" href="/css/app.css?v=20261120-account-dashboard">
 </head>
 <body class="auth-locked">
     <section id="wallet-login-gate" class="wallet-login-gate" aria-labelledby="wallet-login-title">
@@ -88,11 +88,19 @@
         <!-- UNIFIED IN-PAGE NAVIGATION -->
         <nav id="nav-menu" aria-label="Main navigation">
             <details class="nav-dropdown">
+                <summary class="nav-tab nav-dropdown-trigger">Dashboard <span aria-hidden="true">⌄</span></summary>
+                <div class="nav-dropdown-menu">
+                    <button class="nav-tab" data-maintenance-page="accounts" data-dashboard-section="portfolio" data-dashboard-view="accountsView" onclick="switchDashboardSection('portfolio')">Accounts</button>
+                    <button class="nav-tab" data-maintenance-page="accounts" data-dashboard-section="withdrawals" data-dashboard-view="accountsView" onclick="switchDashboardSection('withdrawals')">Withdrawals</button>
+                    <button class="nav-tab" data-maintenance-page="accounts" data-dashboard-section="payments" data-dashboard-view="accountsView" onclick="switchDashboardSection('payments')">Transactions</button>
+                    <button class="nav-tab" data-maintenance-page="profile" data-dashboard-section="profile" data-dashboard-view="profileView" onclick="switchDashboardSection('profile')">Profile &amp; Promos</button>
+                </div>
+            </details>
+            <details class="nav-dropdown">
                 <summary class="nav-tab nav-dropdown-trigger">Trading <span aria-hidden="true">⌄</span></summary>
                 <div class="nav-dropdown-menu">
                     <button class="nav-tab active" data-maintenance-page="trade" data-trade-market-mode="CRYPTO" onclick="switchTradingMarketMode('CRYPTO')">Crypto</button>
                     <button class="nav-tab" data-maintenance-page="trade" data-trade-market-mode="FOREX" onclick="switchTradingMarketMode('FOREX')">Forex</button>
-                    <button class="nav-tab" data-maintenance-page="accounts" onclick="switchView('accountsView')">My Accounts</button>
                     <button class="nav-tab" data-maintenance-page="copytrading" onclick="switchView('copyTradingView')">Copy Trading</button>
                 </div>
             </details>
@@ -103,7 +111,6 @@
                     <button class="nav-tab" data-maintenance-page="blastrrpass" onclick="switchView('blastrrPassView')">BlastrrPass</button>
                 </div>
             </details>
-            <button class="nav-tab" data-maintenance-page="profile" onclick="switchView('profileView')">Profile &amp; Promos</button>
             <button class="nav-tab" data-maintenance-page="plans" onclick="switchView('buyView')">Buy Plans</button>
             <details class="nav-dropdown">
                 <summary class="nav-tab nav-dropdown-trigger">Help <span aria-hidden="true">⌄</span></summary>
@@ -377,13 +384,13 @@
         <!-- 2. ACCOUNTS VIEW -->
         <section id="accountsView" class="view-panel workspace-view">
             <div class="battlepass-page-heading app-page-heading">
-                <div><span class="battlepass-eyebrow">YOUR ACCOUNTS</span><h1>Account portfolio</h1></div>
-                <p class="support-note">Review account performance, limits, and status. Expand an account for trade history and daily results.</p>
+                <div><span id="accounts-view-eyebrow" class="battlepass-eyebrow">ACCOUNT OVERVIEW</span><h1 id="accounts-view-title">Your accounts</h1></div>
+                <p id="accounts-view-description" class="support-note">Review account performance, limits, and status. Expand an account for trade history and daily results.</p>
             </div>
-            <div class="account-main-tabs" role="tablist" aria-label="Account sections">
+            <div class="account-main-tabs dashboard-section-tabs" role="tablist" aria-label="Account sections">
                 <button class="account-main-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="accounts-panel-portfolio" data-accounts-section-tab="portfolio">Accounts</button>
                 <button class="account-main-tab" type="button" role="tab" aria-selected="false" aria-controls="accounts-panel-withdrawals" data-accounts-section-tab="withdrawals">Withdrawals</button>
-                <button class="account-main-tab" type="button" role="tab" aria-selected="false" aria-controls="accounts-panel-payments" data-accounts-section-tab="payments">Payments</button>
+                <button class="account-main-tab" type="button" role="tab" aria-selected="false" aria-controls="accounts-panel-payments" data-accounts-section-tab="payments">Transactions</button>
             </div>
             <section id="accounts-panel-portfolio" class="account-section-panel" role="tabpanel" aria-labelledby="accounts-performance-heading">
                 <section class="account-performance-panel" aria-labelledby="accounts-performance-heading">
@@ -673,7 +680,7 @@
                 <div><span class="battlepass-eyebrow">YOUR BLASTRR PROFILE</span><h1>Profile &amp; promos</h1></div>
                 <p class="support-note">Choose a tool to manage referrals, claim an account, apply as a creator, or get support.</p>
             </div>
-            <div class="admin-section-tabs profile-section-tabs" role="tablist" aria-label="Profile tools">
+            <div class="admin-section-tabs profile-section-tabs dashboard-section-tabs" role="tablist" aria-label="Profile tools">
                 <button id="profile-referrals-tab" class="admin-section-tab active" role="tab" aria-selected="true" aria-controls="profile-referrals-panel" onclick="switchProfileSection('profile-referrals-panel')">Referrals</button>
                 <button id="profile-promo-tab" class="admin-section-tab" role="tab" aria-selected="false" aria-controls="profile-promo-panel" onclick="switchProfileSection('profile-promo-panel')">Claim free account</button>
                 <button id="profile-creator-tab" class="admin-section-tab" role="tab" aria-selected="false" aria-controls="profile-creator-panel" onclick="switchProfileSection('profile-creator-panel')">Creator application</button>
@@ -1299,6 +1306,6 @@
     <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
     <script src="/js/chartIndicators.js?v=20261115-multi-account-checkout" defer></script>
     <script src="https://unpkg.com/@solana/web3.js@1.98.4/lib/index.iife.min.js" defer></script>
-    <script src="/js/app.js?v=20261119-wallet-types" defer></script>
+    <script src="/js/app.js?v=20261120-account-dashboard" defer></script>
 </body>
 </html>

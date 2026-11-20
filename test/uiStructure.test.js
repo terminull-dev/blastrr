@@ -172,8 +172,8 @@ test('admin can toggle maintenance for each public page and set an outage messag
 });
 
 test('trading terminal HTML loads its external stylesheet and application script', () => {
-  assert.match(appHtml, /href="\/css\/app\.css\?v=20261117-plan-tools-align"/);
-  assert.match(appHtml, /src="\/js\/app\.js\?v=20261117-account-risk-polish" defer/);
+  assert.match(appHtml, /href="\/css\/app\.css\?v=20261120-account-dashboard"/);
+  assert.match(appHtml, /src="\/js\/app\.js\?v=20261120-account-dashboard" defer/);
   assert.doesNotMatch(appHtml, /<style[\s>]/i);
   assert.doesNotMatch(appHtml, /<script>\s*[\s\S]*?\bfunction\s/m);
   assert.match(appHtml, /id="nav-menu"/);
@@ -212,8 +212,34 @@ test('trading terminal keeps market status and chart controls on one line withou
   assert.doesNotMatch(appHtml, /<aside class="market-hours-status"/);
 });
 
+test('trading terminal refresh keeps market data and order controls visually distinct', () => {
+  assert.match(appCss, /#tradeView \.chart-market-bar\s*\{[^}]*display:\s*grid/);
+  assert.match(appCss, /#tradeView \.chart-market-stat:first-child > strong/);
+  assert.match(appCss, /#tradeView \.order-mode-tab\.is-active/);
+  assert.match(appCss, /#tradeView \.order-card input:not\(\[type="checkbox"\]\):focus-visible/);
+});
+
+test('dashboard groups account destinations and uses a shared transaction table', () => {
+  const dashboardNav = appHtml.slice(appHtml.indexOf('<summary class="nav-tab nav-dropdown-trigger">Dashboard'), appHtml.indexOf('</details>', appHtml.indexOf('<summary class="nav-tab nav-dropdown-trigger">Dashboard')));
+  for (const section of ['portfolio', 'withdrawals', 'payments', 'profile']) {
+    assert.match(dashboardNav, new RegExp(`data-dashboard-section="${section}"`));
+  }
+  assert.match(appHtml, /data-dashboard-section="payments"[^>]*>Transactions<\/button>/);
+  assert.match(appHtml, /id="accounts-view-title">Your accounts<\/h1>/);
+  assert.match(appHtml, /class="account-main-tabs dashboard-section-tabs"/);
+  assert.match(appHtml, /class="admin-section-tabs profile-section-tabs dashboard-section-tabs"/);
+  assert.match(appJs, /function switchDashboardSection\(section\)/);
+  assert.match(appJs, /const sectionCopy = \{[\s\S]*?withdrawals: \['ACCOUNT PAYOUTS', 'Withdrawals'/);
+  assert.match(appJs, /function renderAccountFinanceTable\(headers, rows\)/);
+  assert.match(appJs, /renderAccountFinanceTable\(\s*\['Account', 'Requested', 'Your share', 'Destination', 'Requested on', 'Status', 'Transaction ID'\]/);
+  assert.match(appJs, /renderAccountFinanceTable\(\s*\['Purchase', 'Total paid', 'Payment asset', 'Network', 'Purchased on', 'Status', 'Transaction ID'\]/);
+  assert.match(appCss, /\.dashboard-section-tabs > button\[aria-selected="true"\]/);
+  assert.match(appCss, /\.account-finance-table \{ min-width: 900px; font-size: 12px; \}/);
+});
+
 test('workspace uses grouped navigation and shared homepage-inspired view and tile styling', () => {
-  assert.match(appHtml, /<details class="nav-dropdown">[\s\S]*?Trading[\s\S]*?data-maintenance-page="accounts"[\s\S]*?data-maintenance-page="copytrading"/);
+  assert.match(appHtml, /<details class="nav-dropdown">[\s\S]*?Dashboard[\s\S]*?data-maintenance-page="accounts"[\s\S]*?data-maintenance-page="profile"/);
+  assert.match(appHtml, /<details class="nav-dropdown">[\s\S]*?Trading[\s\S]*?data-maintenance-page="trade"[\s\S]*?data-maintenance-page="copytrading"/);
   assert.match(appHtml, /<summary class="nav-tab nav-dropdown-trigger">Community/);
   assert.match(appHtml, /<summary class="nav-tab nav-dropdown-trigger">Help/);
   assert.match(appJs, /dropdown\.classList\.toggle\('has-active', Boolean\(dropdown\.querySelector\('\.nav-tab\.active'\)\)\)/);

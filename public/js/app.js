@@ -2203,6 +2203,8 @@ let connectedWallet = null;
 
             const activeTab = Array.from(document.querySelectorAll('#nav-menu .nav-tab')).find(t => t.getAttribute('onclick')?.includes(requestedViewId));
             if (activeTab) activeTab.classList.add('active');
+            const dashboardTab = Array.from(document.querySelectorAll('#nav-menu [data-dashboard-view]')).find(tab => tab.dataset.dashboardView === requestedViewId);
+            if (dashboardTab) dashboardTab.classList.add('active');
             if (requestedViewId === 'tradeView') {
                 document.querySelector(`[data-trade-market-mode="${tradingMarketMode}"]`)?.classList.add('active');
             }
@@ -3843,6 +3845,17 @@ let connectedWallet = null;
 
         function switchAccountsSection(section) {
             if (!['portfolio', 'withdrawals', 'payments'].includes(section)) return;
+            const sectionCopy = {
+                portfolio: ['ACCOUNT OVERVIEW', 'Your accounts', 'Review account performance, limits, and status. Expand an account for trade history and daily results.'],
+                withdrawals: ['ACCOUNT PAYOUTS', 'Withdrawals', 'Request a payout, choose your payout network, and track each withdrawal through completion.'],
+                payments: ['TRANSACTION HISTORY', 'Transactions', 'Review verified account purchases and download printable payment statements.']
+            }[section];
+            const eyebrow = document.getElementById('accounts-view-eyebrow');
+            const title = document.getElementById('accounts-view-title');
+            const description = document.getElementById('accounts-view-description');
+            if (eyebrow) eyebrow.textContent = sectionCopy[0];
+            if (title) title.textContent = sectionCopy[1];
+            if (description) description.textContent = sectionCopy[2];
             document.querySelectorAll('[data-accounts-section-tab]').forEach(tab => {
                 const active = tab.dataset.accountsSectionTab === section;
                 tab.classList.toggle('is-active', active);
@@ -3853,6 +3866,22 @@ let connectedWallet = null;
             });
             if (section === 'withdrawals') loadAccountWithdrawalHistory();
             if (section === 'payments') loadAccountPurchaseHistory();
+        }
+
+        function switchDashboardSection(section) {
+            const sections = {
+                portfolio: { view: 'accountsView', accountSection: 'portfolio' },
+                withdrawals: { view: 'accountsView', accountSection: 'withdrawals' },
+                payments: { view: 'accountsView', accountSection: 'payments' },
+                profile: { view: 'profileView' }
+            };
+            const destination = sections[section];
+            if (!destination) return;
+            switchView(destination.view);
+            if (destination.accountSection) switchAccountsSection(destination.accountSection);
+            document.querySelectorAll('#nav-menu [data-dashboard-section]').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.dashboardSection === section);
+            });
         }
 
         function formatAccountCurrency(value) {
@@ -3877,6 +3906,11 @@ let connectedWallet = null;
             return explorerUrl
                 ? `<a href="${escapeHTML(explorerUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(displayHash)}</a>`
                 : `<code>${escapeHTML(transactionHash)}</code>`;
+        }
+
+        function renderAccountFinanceTable(headers, rows) {
+            const headerCells = headers.map(header => `<th scope="col">${escapeHTML(header)}</th>`).join('');
+            return `<div class="table-responsive"><table class="account-finance-table"><thead><tr>${headerCells}</tr></thead><tbody>${rows}</tbody></table></div>`;
         }
 
         async function loadAccountWithdrawalHistory() {
@@ -3904,7 +3938,7 @@ let connectedWallet = null;
                     list.innerHTML = '<p class="workspace-empty-state">No account withdrawals have been requested.</p>';
                     return;
                 }
-                list.innerHTML = withdrawals.map(withdrawal => {
+                const rows = withdrawals.map(withdrawal => {
                     const status = String(withdrawal.status || 'UNKNOWN').toUpperCase();
                     const statusClass = ['PENDING', 'APPROVED', 'PAID', 'REJECTED'].includes(status) ? status.toLowerCase() : 'unknown';
                     const gross = Number(withdrawal.gross_amount) || 0;
@@ -3913,21 +3947,21 @@ let connectedWallet = null;
                         ? `${escapeHTML(withdrawal.payout_asset || 'USDT')} · ${escapeHTML(getPayoutNetworkLabel(withdrawal.payout_chain_id))}`
                         : 'Not recorded';
                     return `
-                        <article class="account-finance-row">
-                            <div class="account-finance-row-main">
-                                <div><strong>${escapeHTML(withdrawal.plan_name || 'Trading account')}</strong><span>Account ${escapeHTML(withdrawal.account_id || '—')}</span></div>
-                                <span class="account-finance-status is-${statusClass}">${escapeHTML(status)}</span>
-                            </div>
-                            <div class="account-finance-row-details">
-                                <div><span>Requested</span><strong>${formatAccountCurrency(gross)} USDT</strong></div>
-                                <div><span>Your share</span><strong>${formatAccountCurrency(userAmount)} USDT</strong></div>
-                                <div><span>Destination</span><strong>${destination}</strong></div>
-                                <div><span>Requested on</span><strong>${escapeHTML(formatAccountHistoryDate(withdrawal.created_at))}</strong></div>
-                                <div class="account-finance-transaction"><span>Transaction ID</span><strong>${transactionHashMarkup(withdrawal.payout_chain_id, withdrawal.payout_tx_hash)}</strong></div>
-                            </div>
-                        </article>
+                        <tr>
+                            <td><strong>${escapeHTML(withdrawal.plan_name || 'Trading account')}</strong><small>Account ${escapeHTML(withdrawal.account_id || '—')}</small></td>
+                            <td class="account-finance-amount">${formatAccountCurrency(gross)} USDT</td>
+                            <td class="account-finance-amount">${formatAccountCurrency(userAmount)} USDT</td>
+                            <td>${destination}</td>
+                            <td>${escapeHTML(formatAccountHistoryDate(withdrawal.created_at))}</td>
+                            <td><span class="account-finance-status is-${statusClass}">${escapeHTML(status)}</span></td>
+                            <td class="account-finance-transaction">${transactionHashMarkup(withdrawal.payout_chain_id, withdrawal.payout_tx_hash)}</td>
+                        </tr>
                     `;
                 }).join('');
+                list.innerHTML = renderAccountFinanceTable(
+                    ['Account', 'Requested', 'Your share', 'Destination', 'Requested on', 'Status', 'Transaction ID'],
+                    rows
+                );
             } catch (error) {
                 if (walletKey !== getConnectedWalletOwnerKey()) return;
                 list.innerHTML = '';
@@ -3960,21 +3994,21 @@ let connectedWallet = null;
                     list.innerHTML = '<p class="workspace-empty-state">No verified account purchases found.</p>';
                     return;
                 }
-                list.innerHTML = purchases.map(purchase => `
-                    <article class="account-finance-row">
-                        <div class="account-finance-row-main">
-                            <div><strong>${escapeHTML(purchase.plan_name || 'Trading account')}</strong><span>${Number(purchase.quantity) || 1} account${Number(purchase.quantity) === 1 ? '' : 's'} purchased</span></div>
-                            <span class="account-finance-status is-paid">VERIFIED</span>
-                        </div>
-                        <div class="account-finance-row-details">
-                            <div><span>Total paid</span><strong>${formatAccountCurrency(purchase.amount_usdt)} USDT</strong></div>
-                            <div><span>Payment asset</span><strong>${escapeHTML(purchase.payment_asset || 'USDT')}</strong></div>
-                            <div><span>Network</span><strong>${escapeHTML(getPayoutNetworkLabel(purchase.chain_id))}</strong></div>
-                            <div><span>Purchased on</span><strong>${escapeHTML(formatAccountHistoryDate(purchase.created_at))}</strong></div>
-                            <div class="account-finance-transaction"><span>Transaction ID</span><strong>${transactionHashMarkup(purchase.chain_id, purchase.tx_hash)}</strong></div>
-                        </div>
-                    </article>
+                const rows = purchases.map(purchase => `
+                    <tr>
+                        <td><strong>${escapeHTML(purchase.plan_name || 'Trading account')}</strong><small>${Number(purchase.quantity) || 1} account${Number(purchase.quantity) === 1 ? '' : 's'} purchased</small></td>
+                        <td class="account-finance-amount">${formatAccountCurrency(purchase.amount_usdt)} USDT</td>
+                        <td>${escapeHTML(purchase.payment_asset || 'USDT')}</td>
+                        <td>${escapeHTML(getPayoutNetworkLabel(purchase.chain_id))}</td>
+                        <td>${escapeHTML(formatAccountHistoryDate(purchase.created_at))}</td>
+                        <td><span class="account-finance-status is-paid">VERIFIED</span></td>
+                        <td class="account-finance-transaction">${transactionHashMarkup(purchase.chain_id, purchase.tx_hash)}</td>
+                    </tr>
                 `).join('');
+                list.innerHTML = renderAccountFinanceTable(
+                    ['Purchase', 'Total paid', 'Payment asset', 'Network', 'Purchased on', 'Status', 'Transaction ID'],
+                    rows
+                );
             } catch (error) {
                 if (walletKey !== getConnectedWalletOwnerKey()) return;
                 list.innerHTML = '';

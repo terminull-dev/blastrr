@@ -2142,3 +2142,182 @@
             .admin-operations-event button { width: 100%; }
             .admin-support-staff-card { align-items: flex-start; flex-direction: column; }
         }
+
+        body:not(.auth-locked) { background: radial-gradient(ellipse at 16% 0%, rgba(113, 70, 190, 0.1), transparent 34%), #07080b; }
+        header { background: rgba(8, 8, 12, 0.96); border-bottom-color: rgba(167, 139, 250, 0.16); }
+        header #nav-menu { gap: 3px; }
+        header .nav-tab:hover, header .nav-tab:focus-visible,
+        header .nav-tab.active, header .nav-tab.admin-tab.active,
+        header .nav-dropdown.has-active > .nav-dropdown-trigger {
+            border-color: rgba(167, 139, 250, 0.34);
+            background: rgba(139, 92, 246, 0.1);
+            box-shadow: none;
+        }
+        header .nav-dropdown-menu { border-color: rgba(167, 139, 250, 0.2); background: rgba(12, 11, 17, 0.98); }
+        #tradeView .trade-grid { gap: 16px; }
+        #tradeView .card {
+            margin-bottom: 16px;
+            padding: 18px;
+            border-color: rgba(167, 139, 250, 0.13);
+            border-radius: 15px;
+            background: linear-gradient(155deg, rgba(16, 15, 22, 0.98), rgba(8, 9, 13, 0.98));
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24), inset 0 1px rgba(255, 255, 255, 0.025);
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+        #tradeView .card-title { color: #f0eef7; }
+        #tradeView .chart-card-heading { margin-bottom: 14px; }
+        #tradeView .chart-pair-label {
+            padding: 5px 9px;
+            border-color: rgba(167, 139, 250, 0.28);
+            border-radius: 7px;
+            background: rgba(139, 92, 246, 0.13);
+            color: #d7c6ff;
+            font-size: 12px;
+        }
+        #tradeView .market-hours-status {
+            border-color: rgba(104, 240, 192, 0.18);
+            background: rgba(16, 90, 72, 0.14);
+        }
+        #tradeView .chart-market-bar {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(96px, 1fr));
+            gap: 0;
+            padding: 8px 0;
+            border-color: rgba(180, 190, 200, 0.12);
+            border-radius: 11px;
+            background: linear-gradient(110deg, rgba(13, 14, 19, 0.98), rgba(10, 11, 15, 0.92));
+        }
+        #tradeView .chart-market-stat { min-width: 0; padding: 5px 12px; }
+        #tradeView .chart-market-stat + .chart-market-stat { border-left: 1px solid rgba(180, 190, 200, 0.09); }
+        #tradeView .chart-market-stat > span { font-size: 10px; letter-spacing: 0.015em; }
+        #tradeView .chart-market-stat > strong { font-size: 13px; font-weight: 650; }
+        #tradeView .chart-market-stat:first-child > strong { color: #f3efff; font-size: 16px; font-weight: 750; }
+        #tradeView .order-card {
+            border-color: rgba(167, 139, 250, 0.24);
+            background: radial-gradient(ellipse at 100% 0%, rgba(112, 67, 179, 0.1), transparent 36%), linear-gradient(155deg, rgba(17, 15, 24, 0.99), rgba(9, 10, 14, 0.99));
+        }
+        #tradeView .order-card-title { margin-bottom: 20px; color: #f1eaff; font-size: 18px; letter-spacing: -0.025em; }
+        #tradeView .order-mode-tabs {
+            gap: 4px;
+            padding: 4px;
+            border-color: rgba(167, 139, 250, 0.18);
+            border-radius: 10px;
+            background: rgba(5, 6, 9, 0.82);
+        }
+        #tradeView .order-mode-tab { min-height: 38px; border-radius: 7px; color: #a9a8b4; }
+        #tradeView .order-mode-tab:hover, #tradeView .order-mode-tab:focus-visible {
+            border-color: rgba(167, 139, 250, 0.4);
+            color: #f0eaff;
+        }
+        #tradeView .order-mode-tab.is-active {
+            border-color: rgba(167, 139, 250, 0.38);
+            background: linear-gradient(135deg, rgba(124, 84, 204, 0.26), rgba(94, 65, 155, 0.16));
+            color: #eee5ff;
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.06);
+        }
+        #tradeView .order-card input:not([type="checkbox"]):focus-visible,
+        #tradeView .order-card select:focus-visible {
+            border-color: rgba(167, 139, 250, 0.62);
+            outline: 2px solid rgba(167, 139, 250, 0.2);
+            outline-offset: 1px;
+        }
+        #tradeView .selected-account-balance {
+            border-color: rgba(104, 240, 192, 0.18);
+            background: linear-gradient(110deg, rgba(6, 78, 59, 0.17), rgba(12, 11, 17, 0.84));
+        }
+        .market-price-ticker {
+            border-top-color: rgba(167, 139, 250, 0.18);
+            background: rgba(9, 11, 14, 0.98);
+        }
+
+        @media (max-width: 700px) {
+            #tradeView .trade-grid { gap: 10px; }
+            #tradeView .card { padding: 14px; border-radius: 13px; }
+            #tradeView .chart-market-stat { padding-right: 10px; padding-left: 10px; }
+        }
+
+        .dashboard-section-tabs {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 5px;
+            margin: 0 0 18px;
+            padding: 5px;
+            overflow-x: auto;
+            border: 1px solid rgba(180, 190, 200, 0.12);
+            border-radius: 12px;
+            background: linear-gradient(110deg, rgba(13, 14, 18, 0.96), rgba(9, 10, 13, 0.96));
+            scrollbar-width: thin;
+        }
+        #accountsView .dashboard-section-tabs > button,
+        #profileView .dashboard-section-tabs > button {
+            flex: 0 0 auto;
+            min-height: 38px;
+            padding: 8px 13px;
+            border: 1px solid transparent !important;
+            border-radius: 8px;
+            background: transparent !important;
+            color: #aeb4bc !important;
+            font-size: 12px;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+        #accountsView .dashboard-section-tabs > button:hover,
+        #accountsView .dashboard-section-tabs > button:focus-visible,
+        #profileView .dashboard-section-tabs > button:hover,
+        #profileView .dashboard-section-tabs > button:focus-visible {
+            border-color: rgba(167, 139, 250, 0.3) !important;
+            color: #eee7ff !important;
+            outline: none;
+        }
+        #accountsView .dashboard-section-tabs > button[aria-selected="true"],
+        #profileView .dashboard-section-tabs > button[aria-selected="true"] {
+            border-color: rgba(167, 139, 250, 0.34) !important;
+            background: rgba(139, 92, 246, 0.14) !important;
+            color: #e7dcff !important;
+        }
+        #accountsView .account-performance-panel,
+        #accountsView .account-finance-card,
+        #accountsView .payout-preference-card,
+        #accountsView .account-card,
+        #profileView .profile-section-panel > .card {
+            border-color: rgba(180, 190, 200, 0.13);
+            border-radius: 15px;
+            background: linear-gradient(150deg, rgba(15, 15, 20, 0.98), rgba(8, 9, 12, 0.98));
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.025);
+        }
+        #accountsView .account-performance-panel { padding: 18px; }
+        #accountsView .account-card { padding: 16px; }
+        #accountsView .account-finance-card { gap: 14px; padding: 18px; }
+        #accountsView .account-finance-heading h2 { color: #f0eef7; font-size: 20px; letter-spacing: -0.035em; }
+        #accountsView .account-finance-card > .support-note { margin: 0; line-height: 1.55; }
+        .account-finance-table { min-width: 900px; font-size: 12px; }
+        .account-finance-table th {
+            padding: 11px 13px;
+            border-bottom-color: rgba(167, 139, 250, 0.18);
+            background: rgba(21, 19, 28, 0.96);
+            color: #bfb1df;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+        }
+        .account-finance-table td { padding: 13px; border-bottom-color: rgba(180, 190, 200, 0.08); color: #d7d9de; vertical-align: middle; }
+        .account-finance-table tbody tr { transition: background 0.16s ease; }
+        .account-finance-table tbody tr:hover { background: rgba(167, 139, 250, 0.045); }
+        .account-finance-table td:first-child { min-width: 150px; }
+        .account-finance-table td:first-child strong { display: block; color: #f1f0f5; font-size: 12px; }
+        .account-finance-table td:first-child small { display: block; margin-top: 4px; color: #8f949d; font-size: 10px; }
+        .account-finance-table .account-finance-amount { color: #e9e5f1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .account-finance-table .account-finance-status { display: inline-flex; align-items: center; justify-content: center; min-width: 72px; }
+        .account-finance-table .account-finance-transaction { max-width: 180px; overflow-wrap: anywhere; }
+        .account-finance-table .account-finance-transaction a { color: #c9b5ff; font-weight: 650; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+        .account-finance-table .account-finance-transaction code { color: #c4c8d0; font-size: 10px; }
+        .account-finance-table .account-finance-muted { display: inline-block; max-width: 150px; }
+        @media (max-width: 700px) {
+            .dashboard-section-tabs { margin-bottom: 14px; }
+            #accountsView .dashboard-section-tabs > button,
+            #profileView .dashboard-section-tabs > button { min-height: 36px; padding: 7px 10px; font-size: 11px; }
+            #accountsView .account-performance-panel,
+            #accountsView .account-finance-card,
+            #accountsView .payout-preference-card { padding: 14px; }
+            #accountsView .account-finance-heading h2 { font-size: 18px; }
+        }
