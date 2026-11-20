@@ -2495,6 +2495,23 @@ let connectedWallet = null;
             selectBattlePassTab(battlePassActiveTab);
         }
 
+        const BATTLE_PASS_PACK_ARTWORK = Object.freeze({
+            paper: { id: 'paper-pack', viewBox: '70 40 380 520' },
+            wood: { id: 'wood-pack', viewBox: '560 40 380 520' },
+            copper: { id: 'copper-pack', viewBox: '1050 40 380 520' },
+            bronze: { id: 'bronze-pack', viewBox: '70 640 380 520' },
+            iron: { id: 'iron-pack', viewBox: '560 640 380 520' },
+            steel: { id: 'steel-pack', viewBox: '1050 640 380 520' },
+            titanium: { id: 'titanium-pack', viewBox: '70 1240 380 520' },
+            silver: { id: 'silver-pack', viewBox: '560 1240 380 520' },
+            gold: { id: 'gold-pack', viewBox: '1050 1240 380 520' }
+        });
+
+        function getBattlePassPackArtwork(packName) {
+            const tierName = String(packName || '').trim().replace(/\s+pack$/i, '').toLowerCase();
+            return BATTLE_PASS_PACK_ARTWORK[tierName] || null;
+        }
+
         function renderBattlePassShop() {
             const container = document.getElementById('battlepass-pack-shop');
             const points = document.getElementById('battlepass-shop-points');
@@ -2503,11 +2520,15 @@ let connectedWallet = null;
             if (points) points.textContent = Number(battlePassProfile?.points || 0).toLocaleString();
             container.innerHTML = battlePassPacks.length ? battlePassPacks.map(pack => {
                 const outOfStock = Boolean(pack.out_of_stock);
+                const artwork = getBattlePassPackArtwork(pack.name);
+                const graphic = artwork
+                    ? `<svg class="battlepass-pack-art" viewBox="${artwork.viewBox}" aria-hidden="true" focusable="false"><use href="/blastrr_reward_pack_sprite.svg#${artwork.id}"></use></svg>`
+                    : `<span>✦</span><strong>${escapeHTML(pack.name)}</strong>`;
                 const rewards = pack.rewards.map(reward => `
                     <li><span>${escapeHTML(reward.name)}</span><strong>${Number(reward.odds).toLocaleString()}%</strong></li>
                 `).join('');
                 return `<article class="battlepass-pack-card${outOfStock ? ' is-out-of-stock' : ''}" data-pack-card="${Number(pack.id)}">
-                    <div class="battlepass-pack-graphic" aria-hidden="true"><span>✦</span><strong>${escapeHTML(pack.name)}</strong></div>
+                    <div class="battlepass-pack-graphic" aria-hidden="true">${graphic}</div>
                     <div class="battlepass-pack-copy">
                         <div class="battlepass-pack-heading"><h3>${escapeHTML(pack.name)} Pack</h3><span>${Number(pack.points_cost).toLocaleString()} points</span></div>
                         <p>Open once to reveal a reward. Items are delivered instantly; discount certificates go to your vault.</p>

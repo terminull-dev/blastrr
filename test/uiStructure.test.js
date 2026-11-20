@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const appHtml = fs.readFileSync('public/app.html', 'utf8');
 const appJs = fs.readFileSync('public/js/app.js', 'utf8');
 const appCss = fs.readFileSync('public/css/app.css', 'utf8');
+const packSprite = fs.readFileSync('public/blastrr_reward_pack_sprite.svg', 'utf8');
 const landingHtml = fs.readFileSync('public/index.html', 'utf8');
 const databaseJs = fs.readFileSync('database.js', 'utf8');
 const serverJs = fs.readFileSync('server.js', 'utf8');
@@ -48,7 +49,7 @@ test('profile tools are organized into accessible section tabs', () => {
   const profileViewEnd = appHtml.indexOf('<!-- 5. BUY PLANS VIEW -->', profileViewStart);
   const profileHtml = appHtml.slice(profileViewStart, profileViewEnd);
   const toolIds = ['referrals', 'promo', 'creator', 'support', 'reviews'];
-  assert.match(profileHtml, /class="admin-section-tabs profile-section-tabs" role="tablist" aria-label="Profile tools"/);
+  assert.match(profileHtml, /class="admin-section-tabs profile-section-tabs dashboard-section-tabs app-section-tabs" role="tablist" aria-label="Profile tools"/);
   for (const id of toolIds) {
     assert.match(profileHtml, new RegExp(`id="profile-${id}-tab"[^>]*role="tab"`));
     assert.match(profileHtml, new RegExp(`id="profile-${id}-panel"[^>]*role="tabpanel"`));
@@ -226,8 +227,8 @@ test('dashboard groups account destinations and uses a shared transaction table'
   }
   assert.match(appHtml, /data-dashboard-section="payments"[^>]*>Transactions<\/button>/);
   assert.match(appHtml, /id="accounts-view-title">Your accounts<\/h1>/);
-  assert.match(appHtml, /class="account-main-tabs dashboard-section-tabs"/);
-  assert.match(appHtml, /class="admin-section-tabs profile-section-tabs dashboard-section-tabs"/);
+  assert.match(appHtml, /class="account-main-tabs dashboard-section-tabs app-section-tabs"/);
+  assert.match(appHtml, /class="admin-section-tabs profile-section-tabs dashboard-section-tabs app-section-tabs"/);
   assert.match(appJs, /function switchDashboardSection\(section\)/);
   assert.match(appJs, /const sectionCopy = \{[\s\S]*?withdrawals: \['ACCOUNT PAYOUTS', 'Withdrawals'/);
   assert.match(appJs, /function renderAccountFinanceTable\(headers, rows\)/);
@@ -235,6 +236,73 @@ test('dashboard groups account destinations and uses a shared transaction table'
   assert.match(appJs, /renderAccountFinanceTable\(\s*\['Purchase', 'Total paid', 'Payment asset', 'Network', 'Purchased on', 'Status', 'Transaction ID'\]/);
   assert.match(appCss, /\.dashboard-section-tabs > button\[aria-selected="true"\]/);
   assert.match(appCss, /\.account-finance-table \{ min-width: 900px; font-size: 12px; \}/);
+});
+
+test('all section tablists share accessible purple active and focus styling', () => {
+  const tablists = appHtml.match(/class="[^"]*\bapp-section-tabs\b[^"]*" role="tablist"/g) || [];
+  assert.equal(tablists.length, 4);
+  for (const viewId of ['accountsView', 'profileView', 'supportStaffView', 'adminView']) {
+    const viewStart = appHtml.indexOf(`<section id="${viewId}"`);
+    const viewEnd = appHtml.indexOf('</section>', viewStart);
+    assert.ok(viewStart >= 0 && viewEnd > viewStart, `${viewId} should exist`);
+    assert.match(appHtml.slice(viewStart, viewEnd), /app-section-tabs/);
+  }
+  assert.match(appCss, /\.view-panel \.app-section-tabs > button\[role="tab"\]\[aria-selected="true"\]/);
+  assert.match(appCss, /\.view-panel \.app-section-tabs > button\[role="tab"\]\.active/);
+  assert.match(appCss, /\.view-panel \.app-section-tabs > button\[role="tab"\]:focus-visible/);
+  assert.match(appCss, /\.admin-console \.admin-section-tab\.active/);
+  assert.doesNotMatch(appCss, /#profileView \.dashboard-section-tabs > button/);
+  assert.match(appCss, /button:not\(\.nav-tab\):not\(\.admin-section-tab\):not\(\.account-main-tab\):focus-visible/);
+});
+
+test('Battle Pass pack cards render all nine mapped SVG groups and preserve the unknown-pack fallback', () => {
+  const artworkStart = appJs.indexOf('const BATTLE_PASS_PACK_ARTWORK = Object.freeze({');
+  const rendererStart = appJs.indexOf('function renderBattlePassShop()', artworkStart);
+  const rendererEnd = appJs.indexOf('function renderBattlePassVault()', rendererStart);
+  assert.ok(artworkStart >= 0 && rendererStart > artworkStart && rendererEnd > rendererStart);
+  const artworkSource = appJs.slice(artworkStart, rendererStart);
+  const rendererSource = appJs.slice(rendererStart, rendererEnd);
+  const tierNames = ['Paper', 'Wood', 'Copper', 'Bronze', 'Iron', 'Steel', 'Titanium', 'Silver', 'Gold'];
+  const tierIds = tierNames.map(name => `${name.toLowerCase()}-pack`);
+  for (const id of tierIds) assert.match(packSprite, new RegExp(`<g id="${id}"`));
+
+  const shop = { innerHTML: '', onclick: null };
+  const points = { textContent: '' };
+  const reveal = { replaceChildren() {} };
+  const elements = {
+    'battlepass-pack-shop': shop,
+    'battlepass-shop-points': points,
+    'battlepass-pack-reveal': reveal
+  };
+  let openedButton = null;
+  const packs = tierNames.map((name, index) => ({
+    id: index + 1,
+    name,
+    points_cost: 100,
+    out_of_stock: false,
+    rewards: []
+  }));
+  packs.push({ id: 10, name: 'Unknown Tier', points_cost: 100, out_of_stock: false, rewards: [] });
+  const sandbox = {
+    battlePassPacks: packs,
+    battlePassProfile: { points: 1000 },
+    lastPackReveal: null,
+    document: { getElementById: id => elements[id] || null },
+    escapeHTML: value => String(value),
+    openBattlePassPack: button => { openedButton = button; }
+  };
+  vm.runInNewContext(`${artworkSource}\n${rendererSource}\nrenderBattlePassShop();`, sandbox);
+
+  for (const id of tierIds) {
+    assert.ok(shop.innerHTML.includes(`<use href="/blastrr_reward_pack_sprite.svg#${id}">`), `${id} should render`);
+  }
+  assert.ok(shop.innerHTML.includes('<span>✦</span><strong>Unknown Tier</strong>'));
+  const clickedButton = { disabled: false };
+  shop.onclick({ target: { closest: () => clickedButton } });
+  assert.equal(openedButton, clickedButton);
+  const openHandlerStart = appJs.indexOf('async function openBattlePassPack(button)');
+  const openHandlerEnd = appJs.indexOf('async function useBattlePassCertificate(', openHandlerStart);
+  assert.match(appJs.slice(openHandlerStart, openHandlerEnd), /walletFetch\('\/api\/battlepass\/packs\/open'/);
 });
 
 test('workspace uses grouped navigation and shared homepage-inspired view and tile styling', () => {

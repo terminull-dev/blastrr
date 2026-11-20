@@ -977,6 +977,67 @@
             header { padding: 14px 18px; }
         }
 
+        .view-panel .app-section-tabs {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            width: max-content;
+            max-width: 100%;
+            margin: 0 0 16px;
+            padding: 5px;
+            overflow-x: auto;
+            border: 1px solid rgba(167, 139, 250, 0.2);
+            border-radius: 12px;
+            background: linear-gradient(145deg, rgba(20, 17, 29, 0.96), rgba(8, 10, 14, 0.96));
+            scrollbar-color: rgba(167, 139, 250, 0.35) transparent;
+            scrollbar-width: thin;
+        }
+        .view-panel .app-section-tabs > button[role="tab"] {
+            flex: 0 0 auto;
+            min-height: 40px;
+            padding: 8px 13px;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: transparent;
+            color: #aeb4bc;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 650;
+            transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+            white-space: nowrap;
+        }
+        .view-panel .app-section-tabs > button[role="tab"]:hover:not([aria-selected="true"]):not(.active):not(.is-active) {
+            border-color: rgba(167, 139, 250, 0.12);
+            background: rgba(167, 139, 250, 0.07);
+            color: #e9ddff;
+        }
+        .view-panel .app-section-tabs > button[role="tab"][aria-selected="true"],
+        .view-panel .app-section-tabs > button[role="tab"].active,
+        .view-panel .app-section-tabs > button[role="tab"].is-active {
+            border-color: rgba(196, 181, 253, 0.34);
+            background: linear-gradient(135deg, rgba(124, 92, 207, 0.34), rgba(91, 67, 151, 0.23));
+            box-shadow: inset 0 1px rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(167, 139, 250, 0.06);
+            color: #e9ddff;
+        }
+        .view-panel .app-section-tabs > button[role="tab"]:focus-visible {
+            outline: 2px solid #c4b5fd;
+            outline-offset: 2px;
+        }
+        @media (max-width: 700px) {
+            .view-panel .app-section-tabs {
+                width: 100%;
+                margin-bottom: 14px;
+                gap: 3px;
+                padding: 4px;
+                overscroll-behavior-x: contain;
+                -webkit-overflow-scrolling: touch;
+            }
+            .view-panel .app-section-tabs > button[role="tab"] {
+                min-height: 40px;
+                padding: 8px 11px;
+                font-size: 11px;
+            }
+        }
         @media (max-width: 700px) {
             main { padding: 16px 12px 64px; }
             .market-price-ticker { height: 42px; }
@@ -1585,7 +1646,7 @@
             .battlepass-admin-level-grid .battlepass-admin-row > button { width: 100%; }
         }
 
-        button:not(.nav-tab):not(.admin-section-tab), input[type="button"], input[type="submit"], input[type="reset"], .btn {
+        button:not(.nav-tab):not(.admin-section-tab):not(.account-main-tab), input[type="button"], input[type="submit"], input[type="reset"], .btn {
             background: transparent !important;
             background-image: none !important;
             border: 1px solid rgba(180, 190, 200, 0.2) !important;
@@ -1593,9 +1654,9 @@
             box-shadow: 0 0 4px rgba(180, 190, 200, 0.06) !important;
             transform: none;
         }
-        button:not(.nav-tab):not(.admin-section-tab):hover:not(:disabled), input[type="button"]:hover, input[type="submit"]:hover,
+        button:not(.nav-tab):not(.admin-section-tab):not(.account-main-tab):hover:not(:disabled), input[type="button"]:hover, input[type="submit"]:hover,
         input[type="reset"]:hover, .btn:hover,
-        button:not(.nav-tab):not(.admin-section-tab):focus-visible, input[type="button"]:focus-visible, input[type="submit"]:focus-visible,
+        button:not(.nav-tab):not(.admin-section-tab):not(.account-main-tab):focus-visible, input[type="button"]:focus-visible, input[type="submit"]:focus-visible,
         input[type="reset"]:focus-visible, .btn:focus-visible {
             background: transparent !important;
             border-color: rgba(200, 210, 220, 0.48) !important;
@@ -2245,8 +2306,7 @@
             background: linear-gradient(110deg, rgba(13, 14, 18, 0.96), rgba(9, 10, 13, 0.96));
             scrollbar-width: thin;
         }
-        #accountsView .dashboard-section-tabs > button,
-        #profileView .dashboard-section-tabs > button {
+        #accountsView .dashboard-section-tabs > button {
             flex: 0 0 auto;
             min-height: 38px;
             padding: 8px 13px;
@@ -2259,15 +2319,12 @@
             white-space: nowrap;
         }
         #accountsView .dashboard-section-tabs > button:hover,
-        #accountsView .dashboard-section-tabs > button:focus-visible,
-        #profileView .dashboard-section-tabs > button:hover,
-        #profileView .dashboard-section-tabs > button:focus-visible {
+        #accountsView .dashboard-section-tabs > button:focus-visible {
             border-color: rgba(167, 139, 250, 0.3) !important;
             color: #eee7ff !important;
             outline: none;
         }
-        #accountsView .dashboard-section-tabs > button[aria-selected="true"],
-        #profileView .dashboard-section-tabs > button[aria-selected="true"] {
+        #accountsView .dashboard-section-tabs > button[aria-selected="true"] {
             border-color: rgba(167, 139, 250, 0.34) !important;
             background: rgba(139, 92, 246, 0.14) !important;
             color: #e7dcff !important;
@@ -2310,18 +2367,18 @@
         .account-finance-table .account-finance-muted { display: inline-block; max-width: 150px; }
         @media (max-width: 700px) {
             .dashboard-section-tabs { margin-bottom: 14px; }
-            #accountsView .dashboard-section-tabs > button,
-            #profileView .dashboard-section-tabs > button { min-height: 36px; padding: 7px 10px; font-size: 11px; }
+            #accountsView .dashboard-section-tabs > button { min-height: 36px; padding: 7px 10px; font-size: 11px; }
             #accountsView .account-performance-panel,
             #accountsView .account-finance-card,
             #accountsView .payout-preference-card { padding: 14px; }
             #accountsView .account-finance-heading h2 { font-size: 18px; }
         }
 
-        .battlepass-pack-shop { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 14px; }
-        .battlepass-pack-card { display: grid; grid-template-columns: minmax(100px, 0.65fr) minmax(0, 1fr); gap: 14px; padding: 16px; border: 1px solid rgba(167, 139, 250, 0.2); border-radius: 15px; background: linear-gradient(145deg, rgba(20, 17, 29, 0.98), rgba(8, 10, 14, 0.98)); }
+        .battlepass-pack-shop { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+        .battlepass-pack-card { display: grid; grid-template-columns: minmax(125px, 0.8fr) minmax(0, 1.2fr); gap: 16px; padding: 18px; border: 1px solid rgba(167, 139, 250, 0.2); border-radius: 15px; background: linear-gradient(145deg, rgba(20, 17, 29, 0.98), rgba(8, 10, 14, 0.98)); }
         .battlepass-pack-card.is-out-of-stock { opacity: 0.72; }
         .battlepass-pack-graphic { display: grid; align-content: center; justify-items: center; min-height: 160px; padding: 14px; border: 1px solid rgba(196, 181, 253, 0.25); border-radius: 13px; background: radial-gradient(ellipse at 50% 30%, rgba(167, 139, 250, 0.24), transparent 54%), linear-gradient(145deg, #1d1730, #090a10); color: #e9ddff; text-align: center; }
+        .battlepass-pack-art { display: block; width: 100%; max-width: 180px; height: auto; aspect-ratio: 380 / 520; }
         .battlepass-pack-graphic > span { color: #d8b4fe; font-size: 38px; text-shadow: 0 0 22px rgba(167, 139, 250, 0.75); }
         .battlepass-pack-graphic > strong { margin-top: 8px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; }
         .battlepass-pack-graphic.is-opening { animation: battlepass-pack-wobble 0.22s ease-in-out infinite alternate; }
@@ -2354,6 +2411,9 @@
         .battlepass-certificate-card code { color: #e9ddff; overflow-wrap: anywhere; }
         .battlepass-certificate-used { padding: 5px 8px; border: 1px solid rgba(180, 190, 200, 0.12); border-radius: 7px; color: #aeb4bc; }
         .battlepass-admin-shop { display: grid; gap: 14px; }
+        @media (max-width: 900px) {
+            .battlepass-pack-shop { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
         .battlepass-admin-shop-panel[hidden] { display: none; }
         .battlepass-admin-shop-panel { display: grid; gap: 12px; }
         .battlepass-admin-editor { align-items: end; }
@@ -2369,7 +2429,8 @@
         .battlepass-admin-shop-row > button { flex: 0 0 auto; }
         .battlepass-admin-shop-panel [data-reward-field][hidden] { display: none !important; }
         @media (max-width: 700px) {
-            .battlepass-pack-card { grid-template-columns: minmax(78px, 0.35fr) minmax(0, 1fr); gap: 10px; padding: 11px; }
+            .battlepass-pack-shop { grid-template-columns: minmax(0, 1fr); }
+            .battlepass-pack-card { grid-template-columns: minmax(110px, 0.45fr) minmax(0, 1.55fr); gap: 12px; padding: 14px; }
             .battlepass-pack-graphic { min-height: 125px; padding: 8px; }
             .battlepass-pack-graphic > span { font-size: 28px; }
             .battlepass-pack-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
