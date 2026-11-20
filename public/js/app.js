@@ -2614,7 +2614,7 @@ let connectedWallet = null;
                         ? Promise.resolve()
                         : new Promise(resolve => window.setTimeout(resolve, 900))
                 ]);
-                const data = await response.json();
+                const data = await readApiJson(response, '/api/battlepass/packs/open');
                 if (!response.ok) throw new Error(data.error || 'Unable to open this reward pack.');
                 try {
                     localStorage.removeItem(requestStorageKey);

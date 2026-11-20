@@ -167,6 +167,25 @@ test('pack openings spend points once, respect global caps, and issue wallet-bou
   assert.match(appJs, /case 'REWARD_PACK_OUT_OF_STOCK'/);
 });
 
+test('pack opening reports non-JSON responses and keeps the API response contract', () => {
+  const openRoute = serverJs.slice(
+    serverJs.indexOf("app.post('/api/battlepass/packs/open'"),
+    serverJs.indexOf("app.get('/api/battlepass/profile'")
+  );
+  const apiErrorHandler = serverJs.slice(
+    serverJs.indexOf("app.use('/api', (err, req, res, next)"),
+    serverJs.indexOf("app.use('/api', (req, res)")
+  );
+  const apiFallback = serverJs.slice(serverJs.indexOf("app.use('/api', (req, res)"));
+
+  assert.match(appJs, /readApiJson\(response, '\/api\/battlepass\/packs\/open'\)/);
+  assert.match(openRoute, /res\.json\(\{\s*success: true/);
+  assert.match(openRoute, /res\.status\(\d+\)\.json\(\{\s*error:/);
+  assert.match(apiErrorHandler, /res\.status\(500\)\.json\(\{ error:/);
+  assert.match(apiFallback, /res\.status\(404\)\.json\(\{ error:/);
+  assert.ok(serverJs.indexOf("app.post('/api/battlepass/packs/open'") < serverJs.indexOf("app.use('/api'"));
+});
+
 test('reward shop seeds the nine tiers with account rewards from the active plan catalog', () => {
   for (const tier of ['Paper', 'Wood', 'Copper', 'Bronze', 'Iron', 'Steel', 'Titanium', 'Silver', 'Gold']) {
     assert.ok(serverJs.includes(`name: '${tier}'`), `missing ${tier} pack seed`);

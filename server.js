@@ -7783,6 +7783,12 @@ app.get('/api/forex/stream', requireWalletSession, chartLimiter, requireWalletNo
   streamMarketData(res, quote => quote.assetClass === 'FOREX', req.walletAddress);
 });
 
+app.use('/api', (err, req, res, next) => {
+  console.error(`Unhandled API error for ${req.method} ${req.path}:`, err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'An unexpected API error occurred.' });
+});
+
 app.use('/api', (req, res) => {
   res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
 });
