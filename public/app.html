@@ -664,8 +664,13 @@
                 </div>
                 <div id="battlepass-panel-vault" class="battlepass-panel" data-battlepass-panel="vault" hidden>
                     <div class="battlepass-section-heading">
-                        <div><h2>Your rewards vault</h2><p>Account, XP, and points rewards are applied automatically. Use a discount certificate to open checkout for an eligible account.</p></div>
+                        <div><h2>Your rewards vault</h2><p>Open promotional packs here. Account, XP, and points rewards are applied automatically; discount certificates can be used at checkout.</p></div>
                     </div>
+                    <section class="battlepass-vault-section">
+                        <h3>Unopened promotional packs</h3>
+                        <p id="battlepass-vault-pack-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+                        <div id="battlepass-vault-promotional-packs" class="battlepass-vault-list"></div>
+                    </section>
                     <section class="battlepass-vault-section">
                         <h3>Discount certificates</h3>
                         <div id="battlepass-vault-certificates" class="battlepass-vault-list"></div>
@@ -1278,6 +1283,32 @@
                         <p id="admin-battlepass-reward-feedback" class="support-feedback" role="status" aria-live="polite"></p>
                         <div id="admin-battlepass-reward-list" class="battlepass-admin-shop-list"></div>
                     </section>
+                </div>
+                <div class="card admin-battlepass-settings">
+                    <div class="card-title">Promotional pack distribution</div>
+                    <p class="support-note">Issue one unopened pack to every currently eligible trader or to up to 100 selected eligible users. Each recipient opens the same pack for an independently randomized reward.</p>
+                    <div class="battlepass-promotion-controls">
+                        <div class="form-group">
+                            <label for="admin-battlepass-promotion-pack">Pack</label>
+                            <select id="admin-battlepass-promotion-pack" required></select>
+                        </div>
+                        <fieldset class="battlepass-promotion-audience">
+                            <legend>Recipients</legend>
+                            <label><input type="radio" name="admin-battlepass-promotion-audience" value="ALL_ACTIVE" checked> All currently eligible traders</label>
+                            <label><input type="radio" name="admin-battlepass-promotion-audience" value="SELECTED"> Select users</label>
+                        </fieldset>
+                        <div id="admin-battlepass-promotion-user-picker" class="battlepass-promotion-user-picker" hidden>
+                            <div class="battlepass-promotion-search">
+                                <label for="admin-battlepass-promotion-search">Search username or wallet</label>
+                                <input id="admin-battlepass-promotion-search" type="search" minlength="2" maxlength="100" placeholder="Search at least 2 characters">
+                                <button class="battlepass-secondary-button" type="button" id="admin-battlepass-promotion-search-button">Search</button>
+                            </div>
+                            <div id="admin-battlepass-promotion-search-results" class="battlepass-promotion-search-results"></div>
+                            <div id="admin-battlepass-promotion-selected" class="battlepass-promotion-selected"></div>
+                        </div>
+                        <button class="btn-wallet" type="button" id="admin-battlepass-promotion-issue">Issue pack</button>
+                    </div>
+                    <p id="admin-battlepass-promotion-feedback" class="support-feedback" role="status" aria-live="polite"></p>
                 </div>
                 <div class="card admin-battlepass-settings">
                     <div class="card-title">XP and points per plan purchased</div>

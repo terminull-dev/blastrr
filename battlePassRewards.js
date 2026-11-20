@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 function roundOdds(value) {
   return Math.round(Number(value) * 100) / 100;
 }
@@ -44,4 +46,25 @@ function selectWeightedReward(entries, roll) {
   return entries[entries.length - 1];
 }
 
-module.exports = { roundOdds, selectWeightedReward, validatePackRewardPool };
+function selectWeightedRewardWithCapacity(entries) {
+  const validation = validatePackRewardPool(entries);
+  if (!validation.valid) throw new Error(validation.error);
+  const available = entries.filter(entry =>
+    Number(entry.max_drops) === 0 || Number(entry.drops) < Number(entry.max_drops));
+  if (!available.length) throw new Error('No reward capacity remains in this pack.');
+  const weights = available.map(entry => Math.round(Number(entry.odds) * 100));
+  const totalWeight = weights.reduce((total, weight) => total + weight, 0);
+  let roll = crypto.randomInt(totalWeight);
+  for (let index = 0; index < available.length; index += 1) {
+    if (roll < weights[index]) return available[index];
+    roll -= weights[index];
+  }
+  return available[available.length - 1];
+}
+
+module.exports = {
+  roundOdds,
+  selectWeightedReward,
+  selectWeightedRewardWithCapacity,
+  validatePackRewardPool
+};

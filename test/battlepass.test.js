@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { selectWeightedReward, validatePackRewardPool } = require('../battlePassRewards');
+const {
+  selectWeightedReward,
+  selectWeightedRewardWithCapacity,
+  validatePackRewardPool
+} = require('../battlePassRewards');
 
 const databaseJs = fs.readFileSync('database.js', 'utf8');
 const serverJs = fs.readFileSync('server.js', 'utf8');
@@ -143,6 +147,18 @@ test('pack odds are exact and weighted rewards respect configured boundaries', (
   assert.throws(() => selectWeightedReward(pool, 100), RangeError);
 });
 
+test('promotional reward assignment skips capped rewards while preserving their original weights', () => {
+  const pool = [
+    { reward_id: 1, odds: 25, max_drops: 1, drops: 1 },
+    { reward_id: 2, odds: 75, max_drops: 0, drops: 0 }
+  ];
+  assert.equal(selectWeightedRewardWithCapacity(pool).reward_id, 2);
+  assert.throws(
+    () => selectWeightedRewardWithCapacity(pool.map(reward => ({ ...reward, max_drops: 1, drops: 1 }))),
+    /No reward capacity remains/
+  );
+});
+
 test('pack openings spend points once, respect global caps, and issue wallet-bound single-use certificates', () => {
   const openRoute = serverJs.slice(
     serverJs.indexOf("app.post('/api/battlepass/packs/open'"),
@@ -172,6 +188,52 @@ test('pack openings spend points once, respect global caps, and issue wallet-bou
   assert.match(appJs, /role="status">Out of stock/);
   assert.match(serverJs, /FROM admin_notifications n WHERE n\.event_type = 'REWARD_PACK_OUT_OF_STOCK'/);
   assert.match(appJs, /case 'REWARD_PACK_OUT_OF_STOCK'/);
+});
+
+test('admin promotional packs grant once to eligible unique users and open from the vault for free', () => {
+  const issueRoute = serverJs.slice(
+    serverJs.indexOf("app.post('/api/admin/battlepass/promotions/issue'"),
+    serverJs.indexOf("app.get('/api/battlepass/vault'")
+  );
+  const vaultRoute = serverJs.slice(
+    serverJs.indexOf("app.get('/api/battlepass/vault'"),
+    serverJs.indexOf("app.post('/api/battlepass/promotional-packs/open'")
+  );
+  const promoOpenRoute = serverJs.slice(
+    serverJs.indexOf("app.post('/api/battlepass/promotional-packs/open'"),
+    serverJs.indexOf("app.post('/api/battlepass/packs/open'")
+  );
+  assert.match(databaseJs, /CREATE TABLE IF NOT EXISTS battlepass_promotions[\s\S]*?UNIQUE\(created_by, request_key\)/);
+  assert.match(databaseJs, /CREATE TABLE IF NOT EXISTS battlepass_pack_grants[\s\S]*?UNIQUE\(promotion_id, wallet_address\)[\s\S]*?UNIQUE\(opening_id\)/);
+  assert.match(issueRoute, /requireTradeSignature, requireAdminWallet/);
+  assert.match(issueRoute, /BEGIN IMMEDIATE/);
+  assert.match(issueRoute, /audience_type/);
+  assert.match(issueRoute, /a\.status = 'ACTIVE'[\s\S]*?a\.lock_reason[\s\S]*?a\.permanent_lock[\s\S]*?a\.admin_frozen[\s\S]*?w\.status = 'PENDING'/);
+  assert.match(issueRoute, /u\.admin_suspended/);
+  assert.match(issueRoute, /dedupeRecipients/);
+  assert.match(issueRoute, /A selected user is missing or does not have an active eligible trading account/);
+  assert.equal((issueRoute.match(/a\.status = 'ACTIVE'/g) || []).length, 2);
+  assert.equal((issueRoute.match(/a\.admin_frozen/g) || []).length, 2);
+  assert.match(issueRoute, /selectWeightedRewardWithCapacity/);
+  assert.match(issueRoute, /reward_snapshot_json/);
+  assert.match(issueRoute, /WHERE created_by = \? AND request_key = \?/);
+  assert.match(vaultRoute, /promotional_packs/);
+  assert.match(promoOpenRoute, /requireUserNotSuspended/);
+  assert.match(promoOpenRoute, /BEGIN IMMEDIATE/);
+  assert.match(promoOpenRoute, /WHERE g\.id = \? AND \$\{grantWalletPredicate\}/);
+  assert.match(promoOpenRoute, /selectWeightedReward\(pool, crypto\.randomInt\(10000\) \/ 100\)/);
+  assert.match(promoOpenRoute, /UPDATE battlepass_pack_grants SET opening_id = \?, opened_at = CURRENT_TIMESTAMP\s+WHERE id = \? AND opened_at IS NULL/);
+  assert.match(promoOpenRoute, /points_spent, reward_type,[\s\S]*?VALUES \(\?, \?, \?, \?, \?, 0,/);
+  assert.match(promoOpenRoute, /pointsSpent: 0/);
+  assert.match(promoOpenRoute, /reservedReward \? \{ \.\.\.selectedReward, max_drops: 0, drops: 0 \}/);
+  assert.match(promoOpenRoute, /completeBattlePassPackOpening/);
+  assert.match(appHtml, /id="battlepass-vault-promotional-packs"/);
+  assert.match(appHtml, /id="admin-battlepass-promotion-issue"/);
+  assert.match(appJs, /getBattlePassPackArtwork\(pack\.pack_name\)/);
+  assert.match(appJs, /data-open-promotional-pack/);
+  assert.match(appJs, /\/api\/battlepass\/promotional-packs\/open/);
+  assert.match(appJs, /\/api\/admin\/battlepass\/promotions\/issue/);
+  assert.match(appJs, /eligible_trade_account_count/);
 });
 
 test('pack opening reports non-JSON responses and keeps the API response contract', () => {

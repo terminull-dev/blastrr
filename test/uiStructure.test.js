@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const appHtml = fs.readFileSync('public/app.html', 'utf8');
 const appJs = fs.readFileSync('public/js/app.js', 'utf8');
 const appCss = fs.readFileSync('public/css/app.css', 'utf8');
-const packSprite = fs.readFileSync('public/blastrr_reward_pack_sprite.svg', 'utf8');
+const packArtworkDirectory = 'public/images/battlepass/packs';
 const landingHtml = fs.readFileSync('public/index.html', 'utf8');
 const databaseJs = fs.readFileSync('database.js', 'utf8');
 const serverJs = fs.readFileSync('server.js', 'utf8');
@@ -255,7 +255,7 @@ test('all section tablists share accessible purple active and focus styling', ()
   assert.match(appCss, /button:not\(\.nav-tab\):not\(\.admin-section-tab\):not\(\.account-main-tab\):focus-visible/);
 });
 
-test('Battle Pass pack cards render all nine mapped SVG groups and preserve the unknown-pack fallback', () => {
+test('Battle Pass pack cards render nine mapped PNG images and preserve the unknown-pack fallback', () => {
   const artworkStart = appJs.indexOf('const BATTLE_PASS_PACK_ARTWORK = Object.freeze({');
   const rendererStart = appJs.indexOf('function renderBattlePassShop()', artworkStart);
   const rendererEnd = appJs.indexOf('function renderBattlePassVault()', rendererStart);
@@ -263,8 +263,19 @@ test('Battle Pass pack cards render all nine mapped SVG groups and preserve the 
   const artworkSource = appJs.slice(artworkStart, rendererStart);
   const rendererSource = appJs.slice(rendererStart, rendererEnd);
   const tierNames = ['Paper', 'Wood', 'Copper', 'Bronze', 'Iron', 'Steel', 'Titanium', 'Silver', 'Gold'];
-  const tierIds = tierNames.map(name => `${name.toLowerCase()}-pack`);
-  for (const id of tierIds) assert.match(packSprite, new RegExp(`<g id="${id}"`));
+  for (const [index, name] of tierNames.entries()) {
+    const fileName = `${name.toLowerCase()}.png`;
+    const imagePath = `${packArtworkDirectory}/${fileName}`;
+    const image = fs.readFileSync(imagePath);
+    const row = Math.floor(index / 3);
+    const expectedHeight = row === 1 ? 342 : 341;
+    assert.equal(image.toString('ascii', 1, 4), 'PNG');
+    assert.equal(image.readUInt32BE(16), 512);
+    assert.equal(image.readUInt32BE(20), expectedHeight);
+    assert.match(artworkSource, new RegExp(`${name.toLowerCase()}: \\{ src: '/images/battlepass/packs/${fileName}' \\}`));
+  }
+  assert.match(appCss, /\.battlepass-pack-art \{[^}]*aspect-ratio: 3 \/ 2;[^}]*object-fit: contain;/);
+  assert.doesNotMatch(appJs, /blastrr_reward_pack_sprite\.svg/);
 
   const shop = { innerHTML: '', onclick: null };
   const points = { textContent: '' };
@@ -293,8 +304,9 @@ test('Battle Pass pack cards render all nine mapped SVG groups and preserve the 
   };
   vm.runInNewContext(`${artworkSource}\n${rendererSource}\nrenderBattlePassShop();`, sandbox);
 
-  for (const id of tierIds) {
-    assert.ok(shop.innerHTML.includes(`<use href="/blastrr_reward_pack_sprite.svg#${id}">`), `${id} should render`);
+  for (const name of tierNames) {
+    const fileName = `${name.toLowerCase()}.png`;
+    assert.ok(shop.innerHTML.includes(`<img class="battlepass-pack-art" src="/images/battlepass/packs/${fileName}"`), `${name} should render`);
   }
   assert.ok(shop.innerHTML.includes('<span>✦</span><strong>Unknown Tier</strong>'));
   const clickedButton = { disabled: false };
@@ -303,6 +315,30 @@ test('Battle Pass pack cards render all nine mapped SVG groups and preserve the 
   const openHandlerStart = appJs.indexOf('async function openBattlePassPack(button)');
   const openHandlerEnd = appJs.indexOf('async function useBattlePassCertificate(', openHandlerStart);
   assert.match(appJs.slice(openHandlerStart, openHandlerEnd), /walletFetch\('\/api\/battlepass\/packs\/open'/);
+
+  const vaultRendererStart = appJs.indexOf('function renderBattlePassVault()');
+  const vaultRendererEnd = appJs.indexOf('async function openBattlePassPack(', vaultRendererStart);
+  const vault = { innerHTML: '', onclick: null };
+  const certificates = { innerHTML: '', onclick: null };
+  const rewards = { innerHTML: '' };
+  const vaultElements = {
+    'battlepass-vault-promotional-packs': vault,
+    'battlepass-vault-certificates': certificates,
+    'battlepass-vault-rewards': rewards
+  };
+  const vaultSandbox = {
+    battlePassVault: {
+      promotional_packs: [{ id: 'bpg_123', pack_name: 'Gold', created_at: '2026-01-01T00:00:00Z' }],
+      rewards: [],
+      certificates: []
+    },
+    document: { getElementById: id => vaultElements[id] || null },
+    escapeHTML: value => String(value),
+    openBattlePassPromotionalPack() {}
+  };
+  vm.runInNewContext(`${artworkSource}\n${appJs.slice(vaultRendererStart, vaultRendererEnd)}\nrenderBattlePassVault();`, vaultSandbox);
+  assert.ok(vault.innerHTML.includes('<img class="battlepass-pack-art" src="/images/battlepass/packs/gold.png"'));
+  assert.ok(vault.innerHTML.includes('data-open-promotional-pack="bpg_123"'));
 });
 
 test('workspace uses grouped navigation and shared homepage-inspired view and tile styling', () => {

@@ -12,6 +12,7 @@ function completeBattlePassPackOpening({
   pack,
   packId,
   accountIds,
+  pointsSpent = pack.points_cost,
   rollback,
   response,
   notifyPackCap
@@ -73,7 +74,7 @@ function completeBattlePassPackOpening({
                   xp_awarded: xpAwarded,
                   points_awarded: pointsAwarded,
                   account_ids: accountIds,
-                  points_spent: Number(pack.points_cost)
+                  points_spent: Number(pointsSpent)
                 },
                 certificates,
                 points: Number(finalBalance?.points || 0),

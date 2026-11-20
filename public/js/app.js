@@ -134,11 +134,13 @@ let connectedWallet = null;
         let battlePassActiveTab = 'missions';
         let adminBattlePassTasks = [];
         let battlePassPacks = [];
-        let battlePassVault = { rewards: [], certificates: [] };
+        let battlePassVault = { rewards: [], certificates: [], promotional_packs: [] };
         let lastPackReveal = null;
         let adminBattlePassPacks = [];
         let adminBattlePassRewards = [];
         let adminBattlePassPlans = [];
+        let adminBattlePassPromotionRecipients = new Map();
+        let adminBattlePassPromotionRequestKey = null;
                 let marketsData = [];
                 let cryptoMarketsData = [];
                 let forexMarketsData = [];
@@ -2438,7 +2440,8 @@ let connectedWallet = null;
                 battlePassProfile.points = Number(packsData.points ?? battlePassProfile.points);
                 battlePassVault = {
                     rewards: vaultData.rewards || [],
-                    certificates: vaultData.certificates || []
+                    certificates: vaultData.certificates || [],
+                    promotional_packs: vaultData.promotional_packs || []
                 };
                 if (note) note.textContent = '';
                 renderBattlePass();
@@ -2496,15 +2499,15 @@ let connectedWallet = null;
         }
 
         const BATTLE_PASS_PACK_ARTWORK = Object.freeze({
-            paper: { id: 'paper-pack', viewBox: '70 40 380 520' },
-            wood: { id: 'wood-pack', viewBox: '560 40 380 520' },
-            copper: { id: 'copper-pack', viewBox: '1050 40 380 520' },
-            bronze: { id: 'bronze-pack', viewBox: '70 640 380 520' },
-            iron: { id: 'iron-pack', viewBox: '560 640 380 520' },
-            steel: { id: 'steel-pack', viewBox: '1050 640 380 520' },
-            titanium: { id: 'titanium-pack', viewBox: '70 1240 380 520' },
-            silver: { id: 'silver-pack', viewBox: '560 1240 380 520' },
-            gold: { id: 'gold-pack', viewBox: '1050 1240 380 520' }
+            paper: { src: '/images/battlepass/packs/paper.png' },
+            wood: { src: '/images/battlepass/packs/wood.png' },
+            copper: { src: '/images/battlepass/packs/copper.png' },
+            bronze: { src: '/images/battlepass/packs/bronze.png' },
+            iron: { src: '/images/battlepass/packs/iron.png' },
+            steel: { src: '/images/battlepass/packs/steel.png' },
+            titanium: { src: '/images/battlepass/packs/titanium.png' },
+            silver: { src: '/images/battlepass/packs/silver.png' },
+            gold: { src: '/images/battlepass/packs/gold.png' }
         });
 
         function getBattlePassPackArtwork(packName) {
@@ -2522,7 +2525,7 @@ let connectedWallet = null;
                 const outOfStock = Boolean(pack.out_of_stock);
                 const artwork = getBattlePassPackArtwork(pack.name);
                 const graphic = artwork
-                    ? `<svg class="battlepass-pack-art" viewBox="${artwork.viewBox}" aria-hidden="true" focusable="false"><use href="/blastrr_reward_pack_sprite.svg#${artwork.id}"></use></svg>`
+                    ? `<img class="battlepass-pack-art" src="${artwork.src}" alt="" loading="lazy" decoding="async">`
                     : `<span>✦</span><strong>${escapeHTML(pack.name)}</strong>`;
                 const rewards = pack.rewards.map(reward => `
                     <li><span>${escapeHTML(reward.name)}</span><strong>${Number(reward.odds).toLocaleString()}%</strong></li>
@@ -2572,6 +2575,26 @@ let connectedWallet = null;
         function renderBattlePassVault() {
             const container = document.getElementById('battlepass-vault-rewards');
             const certificates = document.getElementById('battlepass-vault-certificates');
+            const promotionalPacks = document.getElementById('battlepass-vault-promotional-packs');
+            if (promotionalPacks) {
+                promotionalPacks.innerHTML = battlePassVault.promotional_packs.length
+                    ? battlePassVault.promotional_packs.map(pack => {
+                        const artwork = getBattlePassPackArtwork(pack.pack_name);
+                        const graphic = artwork
+                            ? `<img class="battlepass-pack-art" src="${artwork.src}" alt="" loading="lazy" decoding="async">`
+                            : `<span>✦</span><strong>${escapeHTML(pack.pack_name)}</strong>`;
+                        return `<article class="battlepass-vault-card battlepass-promotional-pack-card" data-promotional-pack-card="${escapeHTML(pack.id)}">
+                            <div class="battlepass-pack-graphic" aria-hidden="true">${graphic}</div>
+                            <div><strong>${escapeHTML(pack.pack_name)} Pack</strong><small>Promotional pack · received ${new Date(pack.created_at).toLocaleString()}</small></div>
+                            <button class="battlepass-pack-open" type="button" data-open-promotional-pack="${escapeHTML(pack.id)}">Rip pack</button>
+                        </article>`;
+                    }).join('')
+                    : '<p class="account-chart-empty">No unopened promotional packs.</p>';
+                promotionalPacks.onclick = event => {
+                    const button = event.target.closest('[data-open-promotional-pack]');
+                    if (button && !button.disabled) openBattlePassPromotionalPack(button);
+                };
+            }
             if (container) {
                 container.innerHTML = battlePassVault.rewards.length ? battlePassVault.rewards.map(reward => {
                     const details = reward.reward_type === 'ACCOUNT'
@@ -2649,6 +2672,40 @@ let connectedWallet = null;
                 console.error(error);
                 const feedback = document.getElementById('battlepass-shop-feedback');
                 if (feedback) feedback.textContent = error.message || 'Unable to open this reward pack.';
+                await loadBattlePass();
+            } finally {
+                if (packCard) packCard.removeAttribute('aria-busy');
+            }
+        }
+
+        async function openBattlePassPromotionalPack(button) {
+            const packCard = button.closest('[data-promotional-pack-card]');
+            const feedback = document.getElementById('battlepass-vault-pack-feedback');
+            const grantId = button.dataset.openPromotionalPack;
+            if (!grantId || !connectedWallet) return;
+            button.disabled = true;
+            button.textContent = 'Opening…';
+            packCard?.querySelector('.battlepass-pack-graphic')?.classList.add('is-opening');
+            if (packCard) packCard.setAttribute('aria-busy', 'true');
+            if (feedback) feedback.textContent = '';
+            try {
+                const [response] = await Promise.all([
+                    walletFetch('/api/battlepass/promotional-packs/open', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ grant_id: grantId })
+                    }),
+                    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                        ? Promise.resolve()
+                        : new Promise(resolve => window.setTimeout(resolve, 900))
+                ]);
+                const data = await readApiJson(response, '/api/battlepass/promotional-packs/open');
+                if (!response.ok) throw new Error(data.error || 'Unable to open this promotional pack.');
+                await loadBattlePass();
+                if (feedback) feedback.textContent = `${data.opening.reward_name}: ${data.opening.reward_description}`;
+            } catch (error) {
+                console.error(error);
+                if (feedback) feedback.textContent = error.message || 'Unable to open this promotional pack.';
                 await loadBattlePass();
             } finally {
                 if (packCard) packCard.removeAttribute('aria-busy');
@@ -3108,6 +3165,7 @@ let connectedWallet = null;
                 adminBattlePassPacks = data.packs || [];
                 adminBattlePassRewards = data.rewards || [];
                 adminBattlePassPlans = data.plans || [];
+                renderAdminBattlePassPromotionPacks();
                 const planSelect = document.getElementById('admin-battlepass-reward-plan');
                 if (planSelect) {
                     planSelect.innerHTML = '<option value="">Any active account type</option>' +
@@ -3117,6 +3175,156 @@ let connectedWallet = null;
             } catch (error) {
                 console.error(error);
                 if (packList) packList.innerHTML = `<p class="support-feedback">${escapeHTML(error.message)}</p>`;
+            }
+        }
+
+        function renderAdminBattlePassPromotionPacks() {
+            const select = document.getElementById('admin-battlepass-promotion-pack');
+            if (!select) return;
+            const selectedPackId = select.value;
+            const activePacks = adminBattlePassPacks.filter(pack => pack.active);
+            select.innerHTML = '<option value="">Select an active pack</option>' +
+                activePacks.map(pack => `<option value="${Number(pack.id)}">${escapeHTML(pack.name)} Pack</option>`).join('');
+            if (activePacks.some(pack => Number(pack.id) === Number(selectedPackId))) {
+                select.value = String(selectedPackId);
+            }
+        }
+
+        function invalidateAdminBattlePassPromotionRequest() {
+            adminBattlePassPromotionRequestKey = null;
+        }
+
+        function updateAdminBattlePassPromotionAudience() {
+            const audience = document.querySelector('input[name="admin-battlepass-promotion-audience"]:checked')?.value;
+            const picker = document.getElementById('admin-battlepass-promotion-user-picker');
+            if (picker) picker.hidden = audience !== 'SELECTED';
+            invalidateAdminBattlePassPromotionRequest();
+        }
+
+        function renderAdminBattlePassPromotionSelection() {
+            const container = document.getElementById('admin-battlepass-promotion-selected');
+            if (!container) return;
+            const users = [...adminBattlePassPromotionRecipients.values()];
+            container.innerHTML = users.length
+                ? `<strong>${users.length} selected</strong>${users.map(user => `
+                    <div class="battlepass-promotion-user-row">
+                        <span>${escapeHTML(user.username ? `@${user.username}` : 'User without username')} · <code>${escapeHTML(user.wallet_address)}</code></span>
+                        <button class="battlepass-secondary-button" type="button" data-remove-promo-recipient="${escapeHTML(user.wallet_address)}">Remove</button>
+                    </div>
+                `).join('')}`
+                : '<small>No recipients selected.</small>';
+        }
+
+        async function loadAdminBattlePassPromotionUsers() {
+            const query = document.getElementById('admin-battlepass-promotion-search')?.value.trim() || '';
+            const container = document.getElementById('admin-battlepass-promotion-search-results');
+            if (!container) return;
+            if (query.length < 2) {
+                container.innerHTML = '<p class="account-chart-empty">Enter at least 2 characters to search.</p>';
+                return;
+            }
+            container.innerHTML = '<p class="account-chart-empty">Searching eligible users...</p>';
+            try {
+                const authorization = await signedTradeAuthorization();
+                const response = await fetch('/api/admin/users/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...authorization, query })
+                });
+                const data = await readAdminApiResponse(response, '/api/admin/users/search');
+                if (!response.ok) throw new Error(data.error || 'Unable to search user profiles.');
+                const users = data.users || [];
+                if (!users.length) {
+                    container.innerHTML = '<p class="account-chart-empty">No matching users found.</p>';
+                    return;
+                }
+                container.innerHTML = users.map(user => {
+                    const eligible = Number(user.eligible_trade_account_count) > 0 && Number(user.admin_suspended) !== 1;
+                    const selected = adminBattlePassPromotionRecipients.has(user.wallet_address);
+                    return `<div class="battlepass-promotion-user-row">
+                        <label>
+                            <input type="checkbox" data-promo-recipient="${escapeHTML(user.wallet_address)}" ${selected ? 'checked' : ''} ${eligible ? '' : 'disabled'}>
+                            ${escapeHTML(user.username ? `@${user.username}` : 'User without username')} · <code>${escapeHTML(user.wallet_address)}</code>
+                        </label>
+                        <span>${eligible ? `${Number(user.eligible_trade_account_count)} eligible account${Number(user.eligible_trade_account_count) === 1 ? '' : 's'}` : 'Not currently eligible'}</span>
+                    </div>`;
+                }).join('');
+                container.onchange = event => {
+                    const checkbox = event.target.closest('[data-promo-recipient]');
+                    if (!checkbox) return;
+                    const wallet = checkbox.dataset.promoRecipient;
+                    const user = users.find(candidate => candidate.wallet_address === wallet);
+                    if (!user) return;
+                    if (checkbox.checked) {
+                        if (!adminBattlePassPromotionRecipients.has(wallet) && adminBattlePassPromotionRecipients.size >= 100) {
+                            checkbox.checked = false;
+                            const feedback = document.getElementById('admin-battlepass-promotion-feedback');
+                            if (feedback) feedback.textContent = 'Select up to 100 users per promotion.';
+                            return;
+                        }
+                        adminBattlePassPromotionRecipients.set(wallet, user);
+                    } else {
+                        adminBattlePassPromotionRecipients.delete(wallet);
+                    }
+                    invalidateAdminBattlePassPromotionRequest();
+                    renderAdminBattlePassPromotionSelection();
+                };
+            } catch (error) {
+                console.error(error);
+                container.innerHTML = `<p class="support-feedback">${escapeHTML(error.message)}</p>`;
+            }
+        }
+
+        async function issueAdminBattlePassPromotion() {
+            const feedback = document.getElementById('admin-battlepass-promotion-feedback');
+            const button = document.getElementById('admin-battlepass-promotion-issue');
+            const packId = Number(document.getElementById('admin-battlepass-promotion-pack')?.value);
+            const pack = adminBattlePassPacks.find(item => Number(item.id) === packId && item.active);
+            const audienceType = document.querySelector('input[name="admin-battlepass-promotion-audience"]:checked')?.value;
+            const recipients = [...adminBattlePassPromotionRecipients.keys()];
+            if (!pack || !['ALL_ACTIVE', 'SELECTED'].includes(audienceType)) {
+                if (feedback) feedback.textContent = 'Choose an active reward pack and a recipient group.';
+                return;
+            }
+            if (audienceType === 'SELECTED' && !recipients.length) {
+                if (feedback) feedback.textContent = 'Select at least one eligible user.';
+                return;
+            }
+            const recipientSummary = audienceType === 'ALL_ACTIVE'
+                ? 'all users with currently eligible trading accounts'
+                : `${recipients.length} selected eligible user${recipients.length === 1 ? '' : 's'}`;
+            if (!window.confirm(`Issue one ${pack.name} Pack to ${recipientSummary}?`)) return;
+            if (!adminBattlePassPromotionRequestKey) {
+                adminBattlePassPromotionRequestKey = window.crypto?.randomUUID
+                    ? window.crypto.randomUUID()
+                    : `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+            }
+            if (button) button.disabled = true;
+            if (feedback) feedback.textContent = 'Issuing promotional packs...';
+            try {
+                const authorization = await signedTradeAuthorization();
+                const response = await fetch('/api/admin/battlepass/promotions/issue', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...authorization,
+                        pack_id: packId,
+                        audience_type: audienceType,
+                        wallets: audienceType === 'SELECTED' ? recipients : undefined,
+                        request_key: adminBattlePassPromotionRequestKey
+                    })
+                });
+                const data = await readAdminApiResponse(response, '/api/admin/battlepass/promotions/issue');
+                if (!response.ok) throw new Error(data.error || 'Unable to issue promotional packs.');
+                adminBattlePassPromotionRequestKey = null;
+                if (feedback) {
+                    feedback.textContent = `Issued ${pack.name} Pack to ${Number(data.promotion.recipient_count).toLocaleString()} user${Number(data.promotion.recipient_count) === 1 ? '' : 's'}.`;
+                }
+            } catch (error) {
+                console.error(error);
+                if (feedback) feedback.textContent = error.message || 'Unable to issue promotional packs.';
+            } finally {
+                if (button) button.disabled = false;
             }
         }
 
@@ -8975,6 +9183,26 @@ let connectedWallet = null;
             event.preventDefault();
             loadAdminUserSearch(document.getElementById('admin-user-search')?.value.trim() || '');
         });
+        document.querySelectorAll('input[name="admin-battlepass-promotion-audience"]').forEach(input => {
+            input.addEventListener('change', updateAdminBattlePassPromotionAudience);
+        });
+        document.getElementById('admin-battlepass-promotion-pack')?.addEventListener('change', invalidateAdminBattlePassPromotionRequest);
+        document.getElementById('admin-battlepass-promotion-search-button')?.addEventListener('click', loadAdminBattlePassPromotionUsers);
+        document.getElementById('admin-battlepass-promotion-search')?.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                loadAdminBattlePassPromotionUsers();
+            }
+        });
+        document.getElementById('admin-battlepass-promotion-selected')?.addEventListener('click', event => {
+            const button = event.target.closest('[data-remove-promo-recipient]');
+            if (!button) return;
+            adminBattlePassPromotionRecipients.delete(button.dataset.removePromoRecipient);
+            invalidateAdminBattlePassPromotionRequest();
+            renderAdminBattlePassPromotionSelection();
+            loadAdminBattlePassPromotionUsers();
+        });
+        document.getElementById('admin-battlepass-promotion-issue')?.addEventListener('click', issueAdminBattlePassPromotion);
         document.getElementById('admin-plan-create-form')?.addEventListener('submit', event => {
             event.preventDefault();
             saveAdminPlan(event.currentTarget);

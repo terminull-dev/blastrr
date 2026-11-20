@@ -543,6 +543,63 @@ function initTables() {
       FOREIGN KEY(reward_id) REFERENCES battlepass_rewards(id)
     )`);
 
+    db.run(`CREATE TABLE IF NOT EXISTS battlepass_promotions (
+      id TEXT PRIMARY KEY,
+      request_key TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      pack_id INTEGER NOT NULL,
+      audience_type TEXT NOT NULL CHECK(audience_type IN ('ALL_ACTIVE', 'SELECTED')),
+      recipient_count INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(created_by, request_key),
+      FOREIGN KEY(pack_id) REFERENCES battlepass_packs(id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS battlepass_pack_grants (
+      id TEXT PRIMARY KEY,
+      promotion_id TEXT NOT NULL,
+      wallet_address TEXT NOT NULL,
+      pack_id INTEGER NOT NULL,
+      reward_id INTEGER,
+      reward_snapshot_json TEXT,
+      opening_id TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      opened_at DATETIME,
+      UNIQUE(promotion_id, wallet_address),
+      UNIQUE(opening_id),
+      FOREIGN KEY(promotion_id) REFERENCES battlepass_promotions(id),
+      FOREIGN KEY(pack_id) REFERENCES battlepass_packs(id),
+      FOREIGN KEY(reward_id) REFERENCES battlepass_rewards(id),
+      FOREIGN KEY(opening_id) REFERENCES battlepass_pack_openings(id)
+    )`);
+
+    db.all('PRAGMA table_info(battlepass_pack_grants)', (err, columns) => {
+      if (err) {
+        console.error('Unable to inspect promotional pack grant schema', err.message);
+        return;
+      }
+      const existing = new Set((columns || []).map(column => column.name));
+      const additions = [
+        ['reward_id', 'INTEGER'],
+        ['reward_snapshot_json', 'TEXT']
+      ].filter(([name]) => !existing.has(name));
+      const addNext = index => {
+        if (index >= additions.length) return;
+        const [name, type] = additions[index];
+        db.run(`ALTER TABLE battlepass_pack_grants ADD COLUMN ${name} ${type}`, alterErr => {
+          if (alterErr) {
+            console.error(`Unable to add battlepass_pack_grants.${name}`, alterErr.message);
+            return;
+          }
+          addNext(index + 1);
+        });
+      };
+      addNext(0);
+    });
+
+    db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_pack_grants_wallet_created ON battlepass_pack_grants(wallet_address, created_at DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_pack_grants_promotion ON battlepass_pack_grants(promotion_id)');
+
     db.run(`CREATE TABLE IF NOT EXISTS battlepass_discount_certificates (
       code TEXT PRIMARY KEY,
       opening_id TEXT NOT NULL,
