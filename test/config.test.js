@@ -49,6 +49,7 @@ test('plan configuration preserves existing seed limits and valid values', () =>
     ]) {
       assert.ok(Number.isFinite(plan[key]) && plan[key] > 0, `${plan.name} has invalid ${key}`);
     }
+    assert.equal(plan.price_usdt, plan.base_price_usdt, `${plan.name} should start at full price`);
     assert.equal(plan.max_drawdown_pct, 10);
     assert.equal(plan.daily_loss_pct, 5);
   }

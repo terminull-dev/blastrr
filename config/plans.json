@@ -2,7 +2,7 @@
   {
     "name": "Micro $5k",
     "base_price_usdt": 500,
-    "price_usdt": 50,
+    "price_usdt": 500,
     "simulated_capital": 5000,
     "profit_target": 1000,
     "max_drawdown_pct": 10,
@@ -12,7 +12,7 @@
   {
     "name": "Starter $10k",
     "base_price_usdt": 1000,
-    "price_usdt": 100,
+    "price_usdt": 1000,
     "simulated_capital": 10000,
     "profit_target": 2000,
     "max_drawdown_pct": 10,
@@ -22,7 +22,7 @@
   {
     "name": "Trader $20k",
     "base_price_usdt": 2000,
-    "price_usdt": 200,
+    "price_usdt": 2000,
     "simulated_capital": 20000,
     "profit_target": 4000,
     "max_drawdown_pct": 10,
@@ -32,7 +32,7 @@
   {
     "name": "Pro $50k",
     "base_price_usdt": 5000,
-    "price_usdt": 500,
+    "price_usdt": 5000,
     "simulated_capital": 50000,
     "profit_target": 10000,
     "max_drawdown_pct": 10,
@@ -42,7 +42,7 @@
   {
     "name": "Elite $100k",
     "base_price_usdt": 10000,
-    "price_usdt": 1000,
+    "price_usdt": 10000,
     "simulated_capital": 100000,
     "profit_target": 20000,
     "max_drawdown_pct": 10,
@@ -52,7 +52,7 @@
   {
     "name": "Whale $250k",
     "base_price_usdt": 25000,
-    "price_usdt": 2500,
+    "price_usdt": 25000,
     "simulated_capital": 250000,
     "profit_target": 50000,
     "max_drawdown_pct": 10,

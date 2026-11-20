@@ -134,7 +134,7 @@ button:disabled,input[type="button"]:disabled,input[type="submit"]:disabled,inpu
 <section class="hero" id="home">
   <div class="wrap hero-grid">
     <div class="hero-copy">
-      <span class="eyebrow"><span class="dot"></span> <span id="home-hero-discount">90% OFF</span> · STANDARD DISCOUNT</span>
+      <span class="eyebrow"><span class="dot"></span> FULL ACCOUNT PRICING</span>
       <h1>YOUR EDGE.<br><span class="gradient-text">YOUR CAPITAL.</span></h1>
       <p>Trade major Forex pairs like EUR/USD alongside supported crypto markets. Choose your leverage, from 1x up to 50x on eligible instruments, with simulated accounts from $5K to $250K.</p>
       <div class="hero-actions">
@@ -238,8 +238,8 @@ button:disabled,input[type="button"]:disabled,input[type="submit"]:disabled,inpu
 
 <section id="plans">
  <div class="wrap">
-  <div class="section-head reveal"><div><span class="eyebrow">Pick your account</span><h2>Choose your <span class="gradient-text">firepower.</span></h2><p>Six account sizes. One clear rule set. Start with a size that suits your strategy and grow by adding accounts when you're ready.</p></div><a class="btn secondary" href="#comparison">Compare all plans ↓</a></div>
-  <div class="launch-strip reveal"><div class="launch-left"><span class="discount"><span id="home-standard-discount">90%</span> OFF</span><div><strong>Current standard plan discount</strong><small>Applied automatically to plan prices. BlastrrPass reward codes can add extra discounts at checkout.</small></div></div></div>
+  <div class="section-head reveal"><div><span class="eyebrow">Pick your account</span><h2>Choose your <span class="gradient-text">firepower.</span></h2><p>Six account sizes. One clear rule set. Full account prices are shown; eligible discounts apply only after you enter and apply a code at checkout.</p></div><a class="btn secondary" href="#comparison">Compare all plans ↓</a></div>
+  <div class="launch-strip reveal"><div class="launch-left"><span class="discount">FULL PRICE</span><div><strong>Transparent account pricing</strong><small>Enter and apply an eligible promo code at checkout to see its discount before purchasing.</small></div></div></div>
   <div class="plans" id="planCards"></div>
  </div>
 </section>
@@ -321,7 +321,7 @@ button:disabled,input[type="button"]:disabled,input[type="submit"]:disabled,inpu
    <details class="rule"><summary>How do withdrawals work?</summary><p>Choose an available payout asset and network that matches your connected wallet type. The app records the destination network and token with your request for manual review and payment. Timing, minimum amounts, fees, eligibility and any reward split are governed by the current withdrawal policy.</p></details>
    <details class="rule"><summary>When do Forex and crypto markets trade?</summary><p>Forex typically trades around the clock on weekdays, with scheduled weekend and holiday closures. Crypto markets generally trade 24/7/365, although individual instruments, exchanges or the Blastrr platform may have maintenance or service interruptions. Continuous trading does not mean prices or liquidity are constant.</p></details>
    <details class="rule"><summary>How does leverage work?</summary><p>The terminal offers 1x mode and leverage options up to 50x on eligible instruments. Leverage magnifies exposure and can increase losses as well as gains; available limits depend on the instrument. All plan capital and trades are simulated.</p></details>
-   <details class="rule"><summary>How is the standard plan discount applied?</summary><p>The current standard discount is applied automatically to plan prices. BlastrrPass reward codes can add an additional discount at checkout, up to 100% off in total.</p></details>
+   <details class="rule"><summary>How are discounts applied?</summary><p>Account prices are shown at full price. Discounts appear only after you enter and apply an eligible code at checkout. Battle Pass discount certificates are single-use, wallet-bound, and may be restricted to a specific account type.</p></details>
   </div>
  </div>
 </section>
@@ -343,9 +343,8 @@ const APP_URL = "app.html";
 const observer=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add("visible");observer.unobserve(e.target);}}),{threshold:.08});
 let plans = [];
 let planLoadAttempts = 0;
-let standardDiscountPct = 90;
 const money = n => "$"+n.toLocaleString("en-US");
-const discountedPrice = plan => Math.round(Number(plan.base_price_usdt) * (100-standardDiscountPct)) / 100;
+const displayedPrice = plan => Number(plan.base_price_usdt);
 const homeLeaderboardCategories = [
  {mode:"DAILY",host:"home-lb-daily"},
  {mode:"MONTHLY",host:"home-lb-monthly"},
@@ -360,13 +359,13 @@ function renderPlans(){
  host.innerHTML=plans.map(p=>{
   const name=p.name.replace(/\s+\$[\d,]+.*$/,"");
   const featured=name==="Pro";
-  const price=discountedPrice(p);
+  const price=displayedPrice(p);
   return `<article class="plan battlepass-plan-card ${featured?"featured":""} reveal">
    <div class="plan-top"><span class="plan-name">${name.toUpperCase()}</span>${featured?'<span class="tag">POPULAR</span>':''}</div>
    <div class="capital">${money(p.simulated_capital)}</div><div class="tiny-label">SIMULATED CAPITAL</div>
    <div class="plan-status" title="Straight-to-funded plan model. Account capital is simulated; eligibility and current terms apply."><span class="plan-status-icon" aria-hidden="true">↗</span>STRAIGHT TO FUNDED</div>
    <div class="plan-market-hours"><span class="market-hours-dot" aria-hidden="true"></span> Forex + crypto markets</div>
-   <div class="plan-purchase-reward"><span class="plan-purchase-reward-label">Purchase reward · standard discount</span><div class="code-applied"><span>✓</span> ${standardDiscountPct}% STANDARD DISCOUNT APPLIED</div><div class="price-line"><span><span class="price">${money(price)} USDT</span><small class="price-caption">Your discounted price</small></span><span class="old-price">${money(p.base_price_usdt)}</span><span class="save">−${standardDiscountPct}%</span></div></div>
+   <div class="plan-purchase-reward"><span class="plan-purchase-reward-label">Account price</span><div class="price-line"><span><span class="price">${money(price)} USDT</span><small class="price-caption">Full price · apply eligible codes at checkout</small></span></div></div>
    <div class="plan-divider"></div>
    <div class="plan-task-list" aria-label="${name} account rules">
     <div class="metric"><span>Profit target</span><strong>${money(p.profit_target)}</strong></div>
@@ -384,7 +383,7 @@ function renderTable(){
  const table=document.getElementById("comparisonTable");
  table.querySelector("thead").innerHTML=`<tr><th>Plan details</th>${plans.map(p=>`<th>${p.name}<br><span style="font-weight:500;color:#a78bfa">${money(p.simulated_capital)}</span></th>`).join("")}</tr>`;
  const rows=[
-  ["Launch purchase price",p=>`<strong>${money(discountedPrice(p))}</strong> <span style="display:block;color:#7f7898;text-decoration:line-through;font-size:10px">${money(p.base_price_usdt)}</span>`],
+  ["Purchase price",p=>`<strong>${money(displayedPrice(p))}</strong>`],
   ["Simulated capital",p=>`<strong>${money(p.simulated_capital)}</strong>`],
   ["Profit target",p=>money(p.profit_target)],
   ["Daily loss limit",p=>`${money(p.simulated_capital*p.daily_loss_pct/100)} (${p.daily_loss_pct}%)`],
@@ -400,9 +399,6 @@ async function loadPlans(){
   if(!response.ok) throw new Error(`Plan request failed (${response.status})`);
   const data=await response.json();
   plans=Array.isArray(data.plans)?data.plans:[];
-  standardDiscountPct=Number(data.standard_discount_pct??90);
-  document.getElementById("home-standard-discount").textContent=standardDiscountPct+"%";
-  document.getElementById("home-hero-discount").textContent=standardDiscountPct+"% OFF";
   if(!plans.length&&planLoadAttempts<5){
    planLoadAttempts++;
    setTimeout(loadPlans,400);

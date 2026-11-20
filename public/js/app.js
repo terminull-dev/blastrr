@@ -80,6 +80,7 @@ let connectedWallet = null;
         let liveMarketTradeMarkers = [];
         let activePromoCode = null;
         let battlePassDiscountBonusPct = 0;
+        let activePromoDetails = null;
         let standardDiscountPct = 90;
         let plansData = [];
         let planLoadAttempts = 0;
@@ -132,6 +133,12 @@ let connectedWallet = null;
         let battlePassLevels = [];
         let battlePassActiveTab = 'missions';
         let adminBattlePassTasks = [];
+        let battlePassPacks = [];
+        let battlePassVault = { rewards: [], certificates: [] };
+        let lastPackReveal = null;
+        let adminBattlePassPacks = [];
+        let adminBattlePassRewards = [];
+        let adminBattlePassPlans = [];
                 let marketsData = [];
                 let cryptoMarketsData = [];
                 let forexMarketsData = [];
@@ -2420,6 +2427,19 @@ let connectedWallet = null;
                 battlePassProfile = data.profile;
                 battlePassTasks = data.tasks || [];
                 battlePassLevels = data.levels || [];
+                const [packsResponse, vaultResponse] = await Promise.all([
+                    walletFetch('/api/battlepass/packs'),
+                    walletFetch('/api/battlepass/vault')
+                ]);
+                const [packsData, vaultData] = await Promise.all([packsResponse.json(), vaultResponse.json()]);
+                if (!packsResponse.ok) throw new Error(packsData.error || 'Unable to load Battle Pass packs.');
+                if (!vaultResponse.ok) throw new Error(vaultData.error || 'Unable to load your reward vault.');
+                battlePassPacks = packsData.packs || [];
+                battlePassProfile.points = Number(packsData.points ?? battlePassProfile.points);
+                battlePassVault = {
+                    rewards: vaultData.rewards || [],
+                    certificates: vaultData.certificates || []
+                };
                 if (note) note.textContent = '';
                 renderBattlePass();
             } catch (error) {
@@ -2470,7 +2490,163 @@ let connectedWallet = null;
             setBattlePassAvatar(document.getElementById('profile-battlepass-avatar'), battlePassProfile.profile_image_url, username);
             renderBattlePassTasks();
             renderBattlePassLevels();
+            renderBattlePassShop();
+            renderBattlePassVault();
             selectBattlePassTab(battlePassActiveTab);
+        }
+
+        function renderBattlePassShop() {
+            const container = document.getElementById('battlepass-pack-shop');
+            const points = document.getElementById('battlepass-shop-points');
+            const result = document.getElementById('battlepass-pack-reveal');
+            if (!container) return;
+            if (points) points.textContent = Number(battlePassProfile?.points || 0).toLocaleString();
+            container.innerHTML = battlePassPacks.length ? battlePassPacks.map(pack => {
+                const outOfStock = Boolean(pack.out_of_stock);
+                const rewards = pack.rewards.map(reward => `
+                    <li><span>${escapeHTML(reward.name)}</span><strong>${Number(reward.odds).toLocaleString()}%</strong></li>
+                `).join('');
+                return `<article class="battlepass-pack-card${outOfStock ? ' is-out-of-stock' : ''}" data-pack-card="${Number(pack.id)}">
+                    <div class="battlepass-pack-graphic" aria-hidden="true"><span>✦</span><strong>${escapeHTML(pack.name)}</strong></div>
+                    <div class="battlepass-pack-copy">
+                        <div class="battlepass-pack-heading"><h3>${escapeHTML(pack.name)} Pack</h3><span>${Number(pack.points_cost).toLocaleString()} points</span></div>
+                        <p>Open once to reveal a reward. Items are delivered instantly; discount certificates go to your vault.</p>
+                        <details class="battlepass-pack-odds"><summary>Reward odds · ${Number(pack.odds_total || 0).toLocaleString()}% total</summary><ul>${rewards}</ul></details>
+                        ${outOfStock
+                            ? `<span class="battlepass-out-of-stock" role="status">Out of stock</span>`
+                            : `<button class="battlepass-pack-open" type="button" data-open-pack="${Number(pack.id)}" ${Number(battlePassProfile?.points || 0) < Number(pack.points_cost) ? 'disabled' : ''}>${Number(battlePassProfile?.points || 0) < Number(pack.points_cost) ? 'Not enough points' : 'Buy and open pack'}</button>`}
+                    </div>
+                </article>`;
+            }).join('') : '<p class="account-chart-empty">No reward packs are available yet.</p>';
+            container.onclick = event => {
+                const button = event.target.closest('[data-open-pack]');
+                if (button && !button.disabled) openBattlePassPack(button);
+            };
+            if (result) {
+                if (!lastPackReveal) {
+                    result.replaceChildren();
+                } else {
+                    const reward = lastPackReveal.opening;
+                    const copy = document.createElement('p');
+                    copy.className = 'battlepass-pack-reveal-copy';
+                    copy.textContent = `${lastPackReveal.pack_name}: ${reward.reward_name} — ${reward.reward_description}`;
+                    result.replaceChildren(copy);
+                    if (reward.reward_type === 'ACCOUNT') {
+                        const detail = document.createElement('p');
+                        detail.textContent = `${reward.quantity} account${reward.quantity === 1 ? '' : 's'} automatically allocated to your account.`;
+                        result.append(detail);
+                    } else if (reward.reward_type === 'DISCOUNT') {
+                        const detail = document.createElement('p');
+                        detail.textContent = `${lastPackReveal.certificates.length} single-use discount certificate${lastPackReveal.certificates.length === 1 ? '' : 's'} added to your vault.`;
+                        result.append(detail);
+                    } else if (reward.xp_awarded || reward.points_awarded) {
+                        const detail = document.createElement('p');
+                        detail.textContent = `Credited instantly: ${Number(reward.xp_awarded).toLocaleString()} XP and ${Number(reward.points_awarded).toLocaleString()} points.`;
+                        result.append(detail);
+                    }
+                }
+            }
+        }
+
+        function renderBattlePassVault() {
+            const container = document.getElementById('battlepass-vault-rewards');
+            const certificates = document.getElementById('battlepass-vault-certificates');
+            if (container) {
+                container.innerHTML = battlePassVault.rewards.length ? battlePassVault.rewards.map(reward => {
+                    const details = reward.reward_type === 'ACCOUNT'
+                        ? `${Number(reward.quantity)} account${Number(reward.quantity) === 1 ? '' : 's'} automatically allocated${reward.account_plan_name ? ` · ${escapeHTML(reward.account_plan_name)}` : ''}`
+                        : reward.reward_type === 'DISCOUNT'
+                            ? `${Number(reward.certificate_count)} discount certificate${Number(reward.certificate_count) === 1 ? '' : 's'} issued`
+                            : `${Number(reward.xp_awarded).toLocaleString()} XP · ${Number(reward.points_awarded).toLocaleString()} points credited`;
+                    return `<article class="battlepass-vault-card">
+                        <div><strong>${escapeHTML(reward.reward_name)}</strong><small>${escapeHTML(reward.pack_name)} Pack · ${new Date(reward.created_at).toLocaleString()}</small></div>
+                        <p>${escapeHTML(reward.reward_description)}</p>
+                        <span>${details}</span>
+                    </article>`;
+                }).join('') : '<p class="account-chart-empty">Your reward history will appear here after you open a pack.</p>';
+            }
+            if (certificates) {
+                certificates.innerHTML = battlePassVault.certificates.length ? battlePassVault.certificates.map(certificate => `
+                    <article class="battlepass-certificate-card">
+                        <div><strong>${Number(certificate.discount_pct)}% account discount</strong>
+                            <small>${escapeHTML(certificate.eligible_plan_name || 'Any active account type')} · single use · wallet-bound</small></div>
+                        <p>${escapeHTML(certificate.reward_description || '')}</p>
+                        <code>${escapeHTML(certificate.code)}</code>
+                        ${certificate.redeemed_at
+                            ? '<span class="battlepass-certificate-used">Used</span>'
+                            : `<button class="battlepass-task-action" type="button" data-use-certificate="${escapeHTML(certificate.code)}" data-certificate-plan="${certificate.eligible_plan_id == null ? '' : Number(certificate.eligible_plan_id)}">Use discount</button>`}
+                    </article>
+                `).join('') : '<p class="account-chart-empty">No unused discount certificates.</p>';
+                certificates.onclick = event => {
+                    const button = event.target.closest('[data-use-certificate]');
+                    if (button) useBattlePassCertificate(button.dataset.useCertificate, button.dataset.certificatePlan);
+                };
+            }
+        }
+
+        async function openBattlePassPack(button) {
+            const packCard = button.closest('[data-pack-card]');
+            const pack = battlePassPacks.find(item => Number(item.id) === Number(button.dataset.openPack));
+            if (!pack || !connectedWallet) return;
+            button.disabled = true;
+            button.textContent = 'Opening…';
+            packCard?.querySelector('.battlepass-pack-graphic')?.classList.add('is-opening');
+            if (packCard) packCard.setAttribute('aria-busy', 'true');
+            const requestKey = window.crypto?.randomUUID
+                ? window.crypto.randomUUID()
+                : `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+            const requestStorageKey = `blastrr-pack-open:${getConnectedWalletOwnerKey()}:${pack.id}`;
+            let stableRequestKey = requestKey;
+            try {
+                stableRequestKey = localStorage.getItem(requestStorageKey) || requestKey;
+                localStorage.setItem(requestStorageKey, stableRequestKey);
+            } catch (storageError) {
+                console.warn('Unable to persist the pack-opening retry key:', storageError);
+            }
+            try {
+                const [response] = await Promise.all([
+                    walletFetch('/api/battlepass/packs/open', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ pack_id: Number(pack.id), request_key: stableRequestKey })
+                    }),
+                    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                        ? Promise.resolve()
+                        : new Promise(resolve => window.setTimeout(resolve, 900))
+                ]);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Unable to open this reward pack.');
+                try {
+                    localStorage.removeItem(requestStorageKey);
+                } catch (storageError) {
+                    console.warn('Unable to clear the completed pack-opening retry key:', storageError);
+                }
+                lastPackReveal = { ...data, pack_name: pack.name };
+                battlePassActiveTab = 'shop';
+                await loadBattlePass();
+            } catch (error) {
+                console.error(error);
+                const feedback = document.getElementById('battlepass-shop-feedback');
+                if (feedback) feedback.textContent = error.message || 'Unable to open this reward pack.';
+                await loadBattlePass();
+            } finally {
+                if (packCard) packCard.removeAttribute('aria-busy');
+            }
+        }
+
+        async function useBattlePassCertificate(code, planId) {
+            if (!connectedWallet) return;
+            switchView('buyView');
+            activePromoCode = code;
+            activePromoDetails = null;
+            const codeInput = document.getElementById('applied-promo');
+            if (codeInput) codeInput.value = code;
+            renderPlans();
+            await applyPromo();
+            const eligiblePlan = Number(planId);
+            if (eligiblePlan) {
+                document.getElementById(`plan-buy-${eligiblePlan}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
 
         function renderBattlePassTasks() {
@@ -2627,7 +2803,7 @@ let connectedWallet = null;
         }
 
         function selectBattlePassTab(tabName) {
-            const validTabs = ['missions', 'titles', 'leaderboard', 'profile'];
+            const validTabs = ['missions', 'titles', 'shop', 'vault', 'leaderboard', 'profile'];
             if (!validTabs.includes(tabName)) return;
             battlePassActiveTab = tabName;
             document.querySelectorAll('#battlepass-user-content [data-battlepass-tab]').forEach(button => {
@@ -2795,6 +2971,7 @@ let connectedWallet = null;
                 renderAdminBattlePassPlans(data.plans || []);
                 renderAdminBattlePassLevels(data.levels || []);
                 renderAdminBattlePassTasks(data.tasks || []);
+                await loadAdminBattlePassShop();
             } catch (error) {
                 console.error(error);
                 levels.innerHTML = `<p class="support-feedback">${escapeHTML(error.message)}</p>`;
@@ -2893,6 +3070,190 @@ let connectedWallet = null;
                     active: row.querySelector('[data-custom-active]').checked
                 }, button);
             };
+        }
+
+        async function loadAdminBattlePassShop() {
+            const packList = document.getElementById('admin-battlepass-pack-list');
+            if (packList) packList.innerHTML = '<p class="account-chart-empty">Loading packs and rewards...</p>';
+            try {
+                const authorization = await signedTradeAuthorization();
+                const response = await fetch('/api/admin/battlepass/shop/load', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(authorization)
+                });
+                const data = await readAdminApiResponse(response, '/api/admin/battlepass/shop/load');
+                if (!response.ok) throw new Error(data.error || 'Unable to load Battle Pass pack settings.');
+                adminBattlePassPacks = data.packs || [];
+                adminBattlePassRewards = data.rewards || [];
+                adminBattlePassPlans = data.plans || [];
+                const planSelect = document.getElementById('admin-battlepass-reward-plan');
+                if (planSelect) {
+                    planSelect.innerHTML = '<option value="">Any active account type</option>' +
+                        adminBattlePassPlans.map(plan => `<option value="${Number(plan.id)}" ${Number(plan.active) !== 1 ? 'disabled' : ''}>${escapeHTML(plan.name)}${Number(plan.active) !== 1 ? ' (inactive)' : ''}</option>`).join('');
+                }
+                renderAdminBattlePassShop();
+            } catch (error) {
+                console.error(error);
+                if (packList) packList.innerHTML = `<p class="support-feedback">${escapeHTML(error.message)}</p>`;
+            }
+        }
+
+        function renderAdminBattlePassShop() {
+            renderAdminBattlePassPacks();
+            renderAdminBattlePassRewards();
+            updateAdminBattlePassRewardFields();
+        }
+
+        function getAdminPackOddsTotal(entries) {
+            return Math.round(entries.reduce((total, entry) => total + Number(entry.odds || 0), 0) * 100) / 100;
+        }
+
+        function renderAdminBattlePassPacks() {
+            const container = document.getElementById('admin-battlepass-pack-list');
+            if (!container) return;
+            container.innerHTML = adminBattlePassPacks.length ? adminBattlePassPacks.map(pack => {
+                const oddsTotal = getAdminPackOddsTotal(pack.rewards);
+                const capped = pack.rewards.filter(reward => reward.cap_reached);
+                const status = capped.length
+                    ? `Out of stock · cap reached: ${capped.map(reward => escapeHTML(reward.name)).join(', ')}`
+                    : pack.active ? `Active · ${oddsTotal}% odds` : 'Disabled · out of stock';
+                return `<article class="battlepass-admin-shop-row">
+                    <div><strong>${escapeHTML(pack.name)}</strong><small>${Number(pack.points_cost).toLocaleString()} points · ${status}</small></div>
+                    <button class="battlepass-secondary-button" type="button" data-edit-battlepass-pack="${Number(pack.id)}">Edit pack</button>
+                </article>`;
+            }).join('') : '<p class="account-chart-empty">No packs have been created.</p>';
+            container.onclick = event => {
+                const button = event.target.closest('[data-edit-battlepass-pack]');
+                const pack = adminBattlePassPacks.find(item => Number(item.id) === Number(button?.dataset.editBattlepassPack));
+                if (!pack) return;
+                document.getElementById('admin-battlepass-pack-id').value = String(pack.id);
+                document.getElementById('admin-battlepass-pack-name').value = pack.name;
+                document.getElementById('admin-battlepass-pack-cost').value = String(pack.points_cost);
+                document.getElementById('admin-battlepass-pack-active').checked = Boolean(pack.active);
+                const rows = document.getElementById('admin-battlepass-pack-reward-rows');
+                rows.replaceChildren();
+                pack.rewards.forEach(reward => addAdminBattlePassPackRewardRow(reward));
+                document.getElementById('admin-battlepass-pack-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+        }
+
+        function addAdminBattlePassPackRewardRow(entry = {}) {
+            const container = document.getElementById('admin-battlepass-pack-reward-rows');
+            if (!container) return;
+            const row = document.createElement('div');
+            row.className = 'battlepass-admin-pool-row';
+            const options = adminBattlePassRewards.map(reward => `
+                <option value="${Number(reward.id)}" ${Number(reward.id) === Number(entry.reward_id) ? 'selected' : ''}>
+                    ${escapeHTML(reward.name)}${Number(reward.active) !== 1 ? ' (inactive)' : ''}
+                </option>
+            `).join('');
+            row.innerHTML = `
+                <label>Reward <select data-pack-reward-id><option value="">Choose reward</option>${options}</select></label>
+                <label>Odds (%) <input data-pack-reward-odds type="number" min="0.01" max="100" step="0.01" value="${entry.odds == null ? '' : Number(entry.odds)}"></label>
+                <label>Max drops (0 = unlimited) <input data-pack-reward-cap type="number" min="0" step="1" value="${entry.max_drops == null ? 0 : Number(entry.max_drops)}"></label>
+                <button class="battlepass-secondary-button" type="button" data-remove-pack-reward aria-label="Remove reward from pack">Remove</button>
+            `;
+            row.dataset.drops = String(Number(entry.drops || 0));
+            container.append(row);
+            row.querySelector('[data-remove-pack-reward]')?.addEventListener('click', () => row.remove());
+        }
+
+        function resetAdminBattlePassPackForm() {
+            const form = document.getElementById('admin-battlepass-pack-form');
+            if (!form) return;
+            form.reset();
+            document.getElementById('admin-battlepass-pack-id').value = '';
+            document.getElementById('admin-battlepass-pack-active').checked = true;
+            document.getElementById('admin-battlepass-pack-reward-rows')?.replaceChildren();
+            const feedback = document.getElementById('admin-battlepass-pack-feedback');
+            if (feedback) feedback.textContent = '';
+        }
+
+        function renderAdminBattlePassRewards() {
+            const container = document.getElementById('admin-battlepass-reward-list');
+            if (!container) return;
+            container.innerHTML = adminBattlePassRewards.length ? adminBattlePassRewards.map(reward => {
+                const details = reward.reward_type === 'ACCOUNT'
+                    ? `Account · ${escapeHTML(reward.plan_name || 'Unavailable account type')} ×${Number(reward.quantity)}`
+                    : reward.reward_type === 'DISCOUNT'
+                        ? `${Number(reward.discount_pct)}% discount · ${escapeHTML(reward.plan_name || 'any active account type')} ×${Number(reward.quantity)}`
+                        : reward.reward_type === 'XP'
+                            ? `${Number(reward.xp_amount).toLocaleString()} XP ×${Number(reward.quantity)}`
+                            : `${Number(reward.points_amount).toLocaleString()} points ×${Number(reward.quantity)}`;
+                return `<article class="battlepass-admin-shop-row">
+                    <div><strong>${escapeHTML(reward.name)}</strong><small>${details} · ${Number(reward.active) === 1 ? 'Active' : 'Inactive'}${reward.total_drops ? ` · ${Number(reward.total_drops).toLocaleString()} drops` : ''}</small><p>${escapeHTML(reward.description)}</p></div>
+                    <button class="battlepass-secondary-button" type="button" data-edit-battlepass-reward="${Number(reward.id)}">Edit reward</button>
+                </article>`;
+            }).join('') : '<p class="account-chart-empty">No rewards have been created.</p>';
+            container.onclick = event => {
+                const button = event.target.closest('[data-edit-battlepass-reward]');
+                const reward = adminBattlePassRewards.find(item => Number(item.id) === Number(button?.dataset.editBattlepassReward));
+                if (!reward) return;
+                document.getElementById('admin-battlepass-reward-id').value = String(reward.id);
+                document.getElementById('admin-battlepass-reward-name').value = reward.name;
+                document.getElementById('admin-battlepass-reward-description').value = reward.description;
+                document.getElementById('admin-battlepass-reward-type').value = reward.reward_type;
+                document.getElementById('admin-battlepass-reward-plan').value = reward.plan_id == null ? '' : String(reward.plan_id);
+                document.getElementById('admin-battlepass-reward-discount').value = reward.discount_pct == null ? '' : String(reward.discount_pct);
+                document.getElementById('admin-battlepass-reward-xp').value = String(reward.xp_amount);
+                document.getElementById('admin-battlepass-reward-points').value = String(reward.points_amount);
+                document.getElementById('admin-battlepass-reward-quantity').value = String(reward.quantity);
+                document.getElementById('admin-battlepass-reward-active').checked = Number(reward.active) === 1;
+                updateAdminBattlePassRewardFields();
+                document.getElementById('admin-battlepass-reward-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+        }
+
+        function updateAdminBattlePassRewardFields() {
+            const type = document.getElementById('admin-battlepass-reward-type')?.value || 'ACCOUNT';
+            const fields = document.querySelectorAll('[data-reward-field]');
+            fields.forEach(field => {
+                const selected = field.dataset.rewardField === 'plan'
+                    ? ['ACCOUNT', 'DISCOUNT'].includes(type)
+                    : field.dataset.rewardField === 'discount'
+                        ? type === 'DISCOUNT'
+                        : field.dataset.rewardField.toUpperCase() === type;
+                field.hidden = !selected;
+            });
+            const planSelect = document.getElementById('admin-battlepass-reward-plan');
+            if (planSelect) planSelect.required = type === 'ACCOUNT';
+        }
+
+        function resetAdminBattlePassRewardForm() {
+            const form = document.getElementById('admin-battlepass-reward-form');
+            if (!form) return;
+            form.reset();
+            document.getElementById('admin-battlepass-reward-id').value = '';
+            document.getElementById('admin-battlepass-reward-active').checked = true;
+            document.getElementById('admin-battlepass-reward-xp').value = '0';
+            document.getElementById('admin-battlepass-reward-points').value = '0';
+            document.getElementById('admin-battlepass-reward-quantity').value = '1';
+            const feedback = document.getElementById('admin-battlepass-reward-feedback');
+            if (feedback) feedback.textContent = '';
+            updateAdminBattlePassRewardFields();
+        }
+
+        async function saveAdminBattlePassShop(endpoint, values, feedbackId) {
+            const feedback = document.getElementById(feedbackId);
+            if (feedback) feedback.textContent = '';
+            try {
+                const authorization = await signedTradeAuthorization();
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...authorization, ...values })
+                });
+                const data = await readAdminApiResponse(response, endpoint);
+                if (!response.ok) throw new Error(data.error || 'Unable to save Battle Pass shop settings.');
+                if (feedback) feedback.textContent = 'Saved.';
+                await loadAdminBattlePassShop();
+                return true;
+            } catch (error) {
+                console.error(error);
+                if (feedback) feedback.textContent = error.message || 'Unable to save Battle Pass shop settings.';
+                return false;
+            }
         }
 
         async function saveAdminBattlePass(endpoint, values, button) {
@@ -3354,10 +3715,7 @@ let connectedWallet = null;
             const refCode = urlParams.get('ref');
             if (refCode) {
                 const promoInput = document.getElementById('applied-promo');
-                if (promoInput) {
-                    promoInput.value = refCode;
-                    applyPromo();
-                }
+                if (promoInput) promoInput.value = refCode;
             }
         }
 
@@ -5469,6 +5827,7 @@ let connectedWallet = null;
                 case 'REFERRAL_PAYOUT_REJECTED': return `Referral payout rejected for ${walletLabel}`;
                 case 'TICKET_OPENED': return `New support ticket from ${walletLabel}: ${event.plan_name}`;
                 case 'REVIEW_PENDING': return `New homepage review from ${walletLabel}`;
+                case 'REWARD_PACK_OUT_OF_STOCK': return event.plan_name || 'A Battle Pass reward pack is out of stock.';
                 default: return 'Platform activity';
             }
         }
@@ -6205,7 +6564,7 @@ let connectedWallet = null;
 
         const adminPlanFields = [
             ['name', 'Plan name', 'text', '', ''],
-            ['base_price_usdt', 'List price before standard discount (USDT)', 'number', '0.01', '0.01'],
+            ['base_price_usdt', 'Full account price (USDT)', 'number', '0.01', '0.01'],
             ['simulated_capital', 'Simulated capital', 'number', '0.01', '0.01'],
             ['profit_target', 'Profit target', 'number', '0', '0.01'],
             ['max_drawdown_pct', 'Max drawdown / MLL (%)', 'number', '0', '0.01'],
@@ -6213,18 +6572,17 @@ let connectedWallet = null;
             ['max_single_day_profit_pct', 'Max single-day profit / consistency (%)', 'number', '0', '0.01']
         ];
 
-        function renderAdminPlanEditor(plan, standardDiscountPct) {
+        function renderAdminPlanEditor(plan) {
             const fields = adminPlanFields.map(([name, label, type, min, step]) => `
                 <div class="form-group">
                     <label>${label}</label>
                     <input name="${name}" type="${type}" value="${escapeHTML(plan[name] ?? '')}" ${min ? `min="${min}"` : ''} ${step ? `step="${step}"` : ''} ${name === 'name' ? 'maxlength="100"' : ''} required>
                 </div>
             `).join('');
-            const salePrice = Math.round(Number(plan.base_price_usdt) * (100 - Number(standardDiscountPct))) / 100;
             return `
                 <article class="admin-plan-card">
                     <h3>${escapeHTML(plan.name)} · ${Number(plan.active) === 1 ? 'Active' : 'Inactive'}</h3>
-                    <p class="support-note">Current price after ${Number(standardDiscountPct)}% standard discount: $${salePrice.toFixed(2)} USDT</p>
+                    <p class="support-note">Full price: $${Number(plan.base_price_usdt).toFixed(2)} USDT. Discounts apply only after a buyer applies a code.</p>
                     <form class="admin-plan-form admin-plan-edit-form" data-admin-plan-id="${Number(plan.id)}">
                         ${fields}
                         <label class="admin-plan-active"><input name="active" type="checkbox" ${Number(plan.active) === 1 ? 'checked' : ''}> Active for sale</label>
@@ -6247,7 +6605,7 @@ let connectedWallet = null;
                 const data = await readAdminApiResponse(response, '/api/admin/plans/list');
                 if (!response.ok) throw new Error(data.error || 'Unable to load account plans.');
                 container.innerHTML = data.plans?.length
-                    ? data.plans.map(plan => renderAdminPlanEditor(plan, data.standard_discount_pct ?? 90)).join('')
+                    ? data.plans.map(plan => renderAdminPlanEditor(plan)).join('')
                     : '<p class="account-chart-empty">No plans have been created.</p>';
                 container.querySelectorAll('.admin-plan-edit-form').forEach(form => {
                     form.addEventListener('submit', event => {
@@ -7477,7 +7835,10 @@ let connectedWallet = null;
 
             plansData.forEach(plan => {
                 const basePrice = Number(plan.base_price_usdt);
-                const discountPct = Math.min(100, standardDiscountPct + (activePromoCode ? battlePassDiscountBonusPct : 0));
+                const isCertificate = activePromoDetails?.type === 'PACK_DISCOUNT';
+                const planEligible = !isCertificate || activePromoDetails.eligible_plan_id == null ||
+                    Number(activePromoDetails.eligible_plan_id) === Number(plan.id);
+                const discountPct = activePromoDetails && planEligible ? Number(activePromoDetails.discount_pct) : 0;
                 const displayPrice = Math.round(basePrice * (100 - discountPct)) / 100;
                 const capital = Number(plan.simulated_capital);
                 const price = `$${displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
@@ -7500,9 +7861,9 @@ let connectedWallet = null;
                         </div>
                         <span class="purchase-plan-status" title="Straight-to-funded plan model. Account capital is simulated; eligibility and current terms apply."><span class="purchase-plan-status-icon" aria-hidden="true">↗</span>STRAIGHT TO FUNDED</span>
                         <div class="purchase-plan-market-hours"><span aria-hidden="true"></span>Crypto markets · 24/7/365</div>
-                        <section class="purchase-plan-reward" aria-label="Purchase discount reward">
-                            <span class="purchase-plan-reward-label">Purchase reward · discount applied</span>
-                            <div class="purchase-plan-price">${price}<small>${discountPct}% off · <span class="purchase-plan-old-price">${oldPrice}</span></small></div>
+                        <section class="purchase-plan-reward" aria-label="Account price">
+                            <span class="purchase-plan-reward-label">${discountPct ? 'Code discount applied' : 'Account price'}</span>
+                            <div class="purchase-plan-price">${price}<small>${discountPct ? `${discountPct}% off · <span class="purchase-plan-old-price">${oldPrice}</span>` : 'Full price · apply an eligible code to receive a discount'}</small></div>
                         </section>
                         <div class="purchase-plan-rules" aria-label="${escapeHTML(plan.name)} account rules">
                             <div class="purchase-plan-rule"><span>Profit target</span><strong>${profitTarget}</strong></div>
@@ -7513,11 +7874,11 @@ let connectedWallet = null;
                         </div>
                         <div class="purchase-plan-quantity">
                             <label for="plan-quantity-${Number(plan.id)}">Quantity</label>
-                            <input id="plan-quantity-${Number(plan.id)}" type="number" min="1" max="10" step="1" value="1" inputmode="numeric" oninput="updatePlanPurchaseTotal(${Number(plan.id)}, ${displayPrice})">
-                            <span>Up to 10 accounts per checkout</span>
+                            <input id="plan-quantity-${Number(plan.id)}" type="number" min="1" max="${isCertificate ? 1 : 10}" step="1" value="1" inputmode="numeric" ${planEligible ? '' : 'disabled'} oninput="updatePlanPurchaseTotal(${Number(plan.id)}, ${displayPrice})">
+                            <span>${isCertificate ? 'Discount certificates apply to one account only' : 'Up to 10 accounts per checkout'}</span>
                         </div>
                         <p class="purchase-plan-total">Checkout total <strong id="plan-total-${Number(plan.id)}">${initialTotal}</strong></p>
-                        <button id="plan-buy-${Number(plan.id)}" class="btn-wallet purchase-plan-buy" onclick="buyPlan(${Number(plan.id)}, ${displayPrice})">Buy 1 account · ${initialTotal}</button>
+                        <button id="plan-buy-${Number(plan.id)}" class="btn-wallet purchase-plan-buy" ${planEligible ? '' : 'disabled'} onclick="buyPlan(${Number(plan.id)}, ${displayPrice})">${planEligible ? `Buy 1 account · ${initialTotal}` : 'Certificate is for another account type'}</button>
                     </article>
                 `;
             });
@@ -7529,8 +7890,9 @@ let connectedWallet = null;
             const button = document.getElementById(`plan-buy-${planId}`);
             if (!input || !total || !button) return;
             const quantity = Number(input.value);
-            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
-                total.textContent = 'Enter a quantity from 1 to 10';
+            const quantityLimit = activePromoDetails?.type === 'PACK_DISCOUNT' ? 1 : 10;
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > quantityLimit) {
+                total.textContent = `Enter a quantity from 1 to ${quantityLimit}`;
                 button.disabled = true;
                 return;
             }
@@ -7547,26 +7909,36 @@ let connectedWallet = null;
             if (!code) {
                 activePromoCode = null;
                 battlePassDiscountBonusPct = 0;
+                activePromoDetails = null;
                 if (feedback) feedback.textContent = '';
                 renderPlans();
                 return;
             }
 
-            const res = await fetch('/api/promo/validate', {
+            const res = await walletFetch('/api/promo/validate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code })
             });
             const data = await res.json();
 
-            if (data.valid) {
+            if (res.ok && data.valid) {
                 activePromoCode = code.toUpperCase();
                 battlePassDiscountBonusPct = data.type === 'BATTLEPASS' ? Number(data.bonus_discount_pct || 0) : 0;
-                if (feedback) feedback.innerText = `✓ Code '${activePromoCode}' applied! ${Math.min(100, standardDiscountPct + battlePassDiscountBonusPct)}% total discount.`;
+                activePromoDetails = {
+                    type: data.type,
+                    discount_pct: Number(data.discount_pct || 0),
+                    eligible_plan_id: data.eligible_plan_id == null ? null : Number(data.eligible_plan_id),
+                    eligible_plan_name: data.eligible_plan_name || null
+                };
+                const eligibleCopy = activePromoDetails.eligible_plan_name ? ` for ${activePromoDetails.eligible_plan_name}` : '';
+                const oneAccountCopy = data.type === 'PACK_DISCOUNT' ? ' · one account only · replaces other discount codes' : '';
+                if (feedback) feedback.innerText = `✓ Code '${activePromoCode}' applied! ${activePromoDetails.discount_pct}% off${eligibleCopy}${oneAccountCopy}.`;
                 renderPlans();
             } else {
                 activePromoCode = null;
                 battlePassDiscountBonusPct = 0;
+                activePromoDetails = null;
                 if (feedback) feedback.innerText = `✕ ${data.error || 'Invalid promo code.'}`;
                 renderPlans();
             }
@@ -8293,8 +8665,15 @@ let connectedWallet = null;
         async function buyPlan(planId, priceUsdt) {
             if (!connectedWallet) { alert("Connect wallet first!"); return; }
             const quantity = Number(document.getElementById(`plan-quantity-${planId}`)?.value || 1);
-            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
-                alert("Choose a quantity from 1 to 10 accounts.");
+            const quantityLimit = activePromoDetails?.type === 'PACK_DISCOUNT' ? 1 : 10;
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > quantityLimit) {
+                alert(`Choose a quantity from 1 to ${quantityLimit} account${quantityLimit === 1 ? '' : 's'}.`);
+                return;
+            }
+            if (activePromoDetails?.type === 'PACK_DISCOUNT' &&
+                activePromoDetails.eligible_plan_id != null &&
+                Number(activePromoDetails.eligible_plan_id) !== Number(planId)) {
+                alert('This discount certificate can only be used for its eligible account type.');
                 return;
             }
             const amount = Math.round(Number(priceUsdt) * quantity * 100) / 100;
@@ -8680,6 +9059,71 @@ let connectedWallet = null;
             const tabLink = event.target.closest('[data-battlepass-tab-link]');
             if (tab) selectBattlePassTab(tab.dataset.battlepassTab);
             if (tabLink) selectBattlePassTab(tabLink.dataset.battlepassTabLink);
+        });
+        document.querySelector('.battlepass-admin-shop')?.addEventListener('click', event => {
+            const tab = event.target.closest('[data-battlepass-admin-tab]');
+            if (!tab) return;
+            document.querySelectorAll('[data-battlepass-admin-tab]').forEach(button => {
+                const selected = button === tab;
+                button.classList.toggle('active', selected);
+                button.setAttribute('aria-selected', String(selected));
+            });
+            document.querySelectorAll('[data-battlepass-admin-panel]').forEach(panel => {
+                panel.hidden = panel.dataset.battlepassAdminPanel !== tab.dataset.battlepassAdminTab;
+            });
+        });
+        document.getElementById('admin-battlepass-add-pack-reward')?.addEventListener('click', () => addAdminBattlePassPackRewardRow());
+        document.getElementById('admin-battlepass-pack-reset')?.addEventListener('click', resetAdminBattlePassPackForm);
+        document.getElementById('admin-battlepass-reward-reset')?.addEventListener('click', resetAdminBattlePassRewardForm);
+        document.getElementById('admin-battlepass-reward-type')?.addEventListener('change', updateAdminBattlePassRewardFields);
+        document.getElementById('admin-battlepass-pack-form')?.addEventListener('submit', async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const rows = [...document.querySelectorAll('#admin-battlepass-pack-reward-rows .battlepass-admin-pool-row')];
+            const rewards = rows.map(row => ({
+                reward_id: Number(row.querySelector('[data-pack-reward-id]').value),
+                odds: Number(row.querySelector('[data-pack-reward-odds]').value),
+                max_drops: Number(row.querySelector('[data-pack-reward-cap]').value)
+            }));
+            const oddsTotal = getAdminPackOddsTotal(rewards);
+            if (!rewards.length || rewards.some(reward => !reward.reward_id) || oddsTotal !== 100) {
+                const feedback = document.getElementById('admin-battlepass-pack-feedback');
+                if (feedback) feedback.textContent = `Reward odds must total exactly 100% (currently ${oddsTotal}%), and every row must select a reward.`;
+                return;
+            }
+            const button = form.querySelector('button[type="submit"]');
+            if (button) button.disabled = true;
+            const packId = document.getElementById('admin-battlepass-pack-id').value;
+            const success = await saveAdminBattlePassShop('/api/admin/battlepass/packs/save', {
+                pack_id: packId ? Number(packId) : null,
+                name: document.getElementById('admin-battlepass-pack-name').value.trim(),
+                points_cost: Number(document.getElementById('admin-battlepass-pack-cost').value),
+                active: document.getElementById('admin-battlepass-pack-active').checked,
+                rewards
+            }, 'admin-battlepass-pack-feedback');
+            if (success) resetAdminBattlePassPackForm();
+            if (button) button.disabled = false;
+        });
+        document.getElementById('admin-battlepass-reward-form')?.addEventListener('submit', async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const button = form.querySelector('button[type="submit"]');
+            if (button) button.disabled = true;
+            const rewardId = document.getElementById('admin-battlepass-reward-id').value;
+            const success = await saveAdminBattlePassShop('/api/admin/battlepass/rewards/save', {
+                reward_id: rewardId ? Number(rewardId) : null,
+                name: document.getElementById('admin-battlepass-reward-name').value.trim(),
+                description: document.getElementById('admin-battlepass-reward-description').value.trim(),
+                reward_type: document.getElementById('admin-battlepass-reward-type').value,
+                plan_id: document.getElementById('admin-battlepass-reward-plan').value || null,
+                discount_pct: document.getElementById('admin-battlepass-reward-discount').value || null,
+                xp_amount: Number(document.getElementById('admin-battlepass-reward-xp').value || 0),
+                points_amount: Number(document.getElementById('admin-battlepass-reward-points').value || 0),
+                quantity: Number(document.getElementById('admin-battlepass-reward-quantity').value),
+                active: document.getElementById('admin-battlepass-reward-active').checked
+            }, 'admin-battlepass-reward-feedback');
+            if (success) resetAdminBattlePassRewardForm();
+            if (button) button.disabled = false;
         });
         document.getElementById('admin-battlepass-settings-form')?.addEventListener('submit', event => {
             event.preventDefault();

@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { selectWeightedReward, validatePackRewardPool } = require('../battlePassRewards');
 
 const databaseJs = fs.readFileSync('database.js', 'utf8');
 const serverJs = fs.readFileSync('server.js', 'utf8');
@@ -98,7 +99,6 @@ test('level titles unlock by XP and can be claimed without spending points', () 
   assert.match(titleClaimRoute, /battlepass_level_titles/);
   assert.match(titleClaimRoute, /xp_required/);
   assert.doesNotMatch(titleClaimRoute, /points_cost|points = points -|battlepass_reward_codes/);
-  assert.doesNotMatch(serverJs, /points\s*=\s*points\s*-/);
   assert.doesNotMatch(appJs, /points_cost/);
   assert.match(appHtml, /data-battlepass-tab="titles"/);
   assert.match(appJs, /Claim these titles for free; your points are not spent\./);
@@ -113,19 +113,67 @@ test('admin level title editors use full-width rows with usable responsive contr
   assert.match(appJs, /data-save-level-title/);
 });
 
-test('previously claimed discount codes remain wallet-bound and checkout applies the configured discount', () => {
+test('checkout shows full prices until a code is explicitly applied', () => {
   assert.match(serverJs, /WHERE code = \? AND LOWER\(wallet_address\) = LOWER\(\?\) AND redeemed_at IS NULL/);
   assert.match(serverJs, /app\.post\('\/api\/accounts\/purchase', sensitiveLimiter, requireWalletSession/);
-  assert.match(serverJs, /const totalDiscountPct = Math\.min\(100, standardDiscountPct \+ bonusDiscountPct\)/);
+  assert.match(serverJs, /const totalDiscountPct = packCertificate[\s\S]*?promoCode \? Math\.min\(100, standardDiscountPct \+ bonusDiscountPct\) : 0/);
+  assert.match(serverJs, /Math\.round\(Number\(plan\.base_price_usdt\) \* \(100 - totalDiscountPct\)\) \/ 100/);
   assert.match(serverJs, /xp_awarded: isFreeRedemption \? 0 : xpAward/);
   assert.match(serverJs, /const totalPrice = Math\.round\(finalPrice \* quantity \* 100\) \/ 100/);
   assert.match(serverJs, /if \(isFreeRedemption && quantity > 1\)/);
   assert.match(serverJs, /paid_amount, commission_earned, commission_pct, level\)[\s\S]*?totalPrice/);
   assert.match(databaseJs, /quantity INTEGER NOT NULL DEFAULT 1/);
-  assert.match(appJs, /standardDiscountPct \+ \(activePromoCode \? battlePassDiscountBonusPct : 0\)/);
+  assert.match(appJs, /const discountPct = activePromoDetails && planEligible \? Number\(activePromoDetails\.discount_pct\) : 0/);
+  assert.doesNotMatch(appJs, /promoInput\.value = refCode;\s*applyPromo\(\)/);
   assert.match(appJs, /type="number" min="1" max="10" step="1" value="1"/);
   assert.match(appJs, /toLocaleString\(undefined, \{ minimumFractionDigits: 2, maximumFractionDigits: 2 \}\)/);
   assert.match(appJs, /compactBattlePassXp/);
+});
+
+test('pack odds are exact and weighted rewards respect configured boundaries', () => {
+  const pool = [
+    { reward_id: 1, odds: 25, max_drops: 0 },
+    { reward_id: 2, odds: 75, max_drops: 3 }
+  ];
+  assert.deepEqual(validatePackRewardPool(pool), { valid: true, total: 100, error: null });
+  assert.equal(selectWeightedReward(pool, 0), pool[0]);
+  assert.equal(selectWeightedReward(pool, 24.99), pool[0]);
+  assert.equal(selectWeightedReward(pool, 25), pool[1]);
+  assert.equal(validatePackRewardPool([{ ...pool[0], odds: 99 }]).valid, false);
+  assert.throws(() => selectWeightedReward(pool, 100), RangeError);
+});
+
+test('pack openings spend points once, respect global caps, and issue wallet-bound single-use certificates', () => {
+  const openRoute = serverJs.slice(
+    serverJs.indexOf("app.post('/api/battlepass/packs/open'"),
+    serverJs.indexOf("app.get('/api/battlepass/profile'")
+  );
+  const purchaseRoute = serverJs.slice(
+    serverJs.indexOf("app.post('/api/accounts/purchase'"),
+    serverJs.indexOf("// --- SECURE WITHDRAWAL REQUEST ENDPOINT")
+  );
+  assert.match(databaseJs, /UNIQUE\(wallet_address, request_key\)/);
+  assert.match(openRoute, /BEGIN IMMEDIATE/);
+  assert.match(openRoute, /points = points - \?/);
+  assert.match(openRoute, /battlepass_discount_certificates/);
+  assert.match(openRoute, /WHERE o\.pack_id = pr\.pack_id AND o\.reward_id = pr\.reward_id/);
+  assert.match(openRoute, /UPDATE battlepass_packs SET active = 0/);
+  assert.match(purchaseRoute, /UPDATE battlepass_discount_certificates[\s\S]*?LOWER\(wallet_address\) = LOWER\(\?\) AND redeemed_at IS NULL/);
+  assert.match(purchaseRoute, /eligible_plan_id IS NULL OR eligible_plan_id = \?/);
+  assert.match(appHtml, /data-battlepass-tab="shop"/);
+  assert.match(appHtml, /data-battlepass-tab="vault"/);
+  assert.match(appJs, /role="status">Out of stock/);
+  assert.match(serverJs, /FROM admin_notifications n WHERE n\.event_type = 'REWARD_PACK_OUT_OF_STOCK'/);
+  assert.match(appJs, /case 'REWARD_PACK_OUT_OF_STOCK'/);
+});
+
+test('reward shop seeds the nine tiers with account rewards from the active plan catalog', () => {
+  for (const tier of ['Paper', 'Wood', 'Copper', 'Bronze', 'Iron', 'Steel', 'Titanium', 'Silver', 'Gold']) {
+    assert.ok(serverJs.includes(`name: '${tier}'`), `missing ${tier} pack seed`);
+  }
+  assert.match(serverJs, /SELECT id, name FROM plans WHERE active = 1 ORDER BY id/);
+  assert.match(serverJs, /const name = `Account reward: \$\{plan\.name\}`/);
+  assert.match(serverJs, /Reward odds must total exactly 100%/);
 });
 
 test('leaderboards and public profile cards include BlastrrPass level and XP', () => {
@@ -144,7 +192,7 @@ test('leaderboards and public profile cards include BlastrrPass level and XP', (
   assert.match(appJs, /setBattlePassAvatar\(document\.getElementById\('profile-battlepass-avatar'\), battlePassProfile\.profile_image_url, username\)/);
   assert.match(appJs, /loadPublicBattlePassProfile/);
   assert.match(appJs, /platform\.twitter\.com\/widgets\.js/);
-  assert.match(homeHtml, /standardDiscountPct=Number\(data\.standard_discount_pct\?\?90\)/);
+  assert.match(homeHtml, /const displayedPrice = plan => Number\(plan\.base_price_usdt\)/);
 });
 
 test('BlastrrPass dashboard presents missions, titles, leaderboard, and profile sections', () => {

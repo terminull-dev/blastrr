@@ -488,6 +488,85 @@ function initTables() {
       FOREIGN KEY(level) REFERENCES battlepass_levels(level)
     )`);
 
+    db.run(`CREATE TABLE IF NOT EXISTS battlepass_packs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      points_cost INTEGER NOT NULL CHECK(points_cost >= 0),
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS battlepass_rewards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL,
+      reward_type TEXT NOT NULL CHECK(reward_type IN ('ACCOUNT', 'DISCOUNT', 'XP', 'POINTS')),
+      plan_id INTEGER,
+      discount_pct REAL,
+      xp_amount INTEGER NOT NULL DEFAULT 0,
+      points_amount INTEGER NOT NULL DEFAULT 0,
+      quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(plan_id) REFERENCES plans(id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS battlepass_pack_rewards (
+      pack_id INTEGER NOT NULL,
+      reward_id INTEGER NOT NULL,
+      odds REAL NOT NULL,
+      max_drops INTEGER NOT NULL DEFAULT 0 CHECK(max_drops >= 0),
+      PRIMARY KEY(pack_id, reward_id),
+      FOREIGN KEY(pack_id) REFERENCES battlepass_packs(id),
+      FOREIGN KEY(reward_id) REFERENCES battlepass_rewards(id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS battlepass_pack_openings (
+      id TEXT PRIMARY KEY,
+      request_key TEXT NOT NULL,
+      wallet_address TEXT NOT NULL,
+      pack_id INTEGER NOT NULL,
+      reward_id INTEGER NOT NULL,
+      points_spent INTEGER NOT NULL,
+      reward_type TEXT NOT NULL,
+      reward_name TEXT NOT NULL,
+      reward_description TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      xp_awarded INTEGER NOT NULL DEFAULT 0,
+      points_awarded INTEGER NOT NULL DEFAULT 0,
+      account_ids_json TEXT NOT NULL DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(wallet_address, request_key),
+      FOREIGN KEY(pack_id) REFERENCES battlepass_packs(id),
+      FOREIGN KEY(reward_id) REFERENCES battlepass_rewards(id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS battlepass_discount_certificates (
+      code TEXT PRIMARY KEY,
+      opening_id TEXT NOT NULL,
+      wallet_address TEXT NOT NULL,
+      reward_id INTEGER NOT NULL,
+      discount_pct REAL NOT NULL CHECK(discount_pct BETWEEN 91 AND 98),
+      eligible_plan_id INTEGER,
+      redeemed_at DATETIME,
+      purchase_tx_hash TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(opening_id) REFERENCES battlepass_pack_openings(id),
+      FOREIGN KEY(reward_id) REFERENCES battlepass_rewards(id),
+      FOREIGN KEY(eligible_plan_id) REFERENCES plans(id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS admin_notifications (
+      event_key TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      read_at DATETIME
+    )`);
+
     db.run(`CREATE TABLE IF NOT EXISTS daily_account_summaries (
       account_id TEXT NOT NULL,
       day TEXT NOT NULL,
@@ -587,6 +666,10 @@ function initTables() {
     db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_claims_wallet ON battlepass_task_claims(wallet_address, created_at DESC)');
     db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_events_wallet ON battlepass_events(wallet_address, created_at DESC)');
     db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_level_titles_wallet_level ON battlepass_level_titles(wallet_address, level DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_pack_openings_wallet ON battlepass_pack_openings(wallet_address, created_at DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_pack_openings_reward ON battlepass_pack_openings(pack_id, reward_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_battlepass_discount_certificates_wallet ON battlepass_discount_certificates(wallet_address, created_at DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_admin_notifications_created ON admin_notifications(created_at DESC)');
     db.run('INSERT OR IGNORE INTO referral_settings (id, level_two_pct) VALUES (1, 2)');
     db.run('INSERT OR IGNORE INTO plan_seed_state (id, seeded) VALUES (1, 0)');
 

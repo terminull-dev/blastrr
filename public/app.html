@@ -588,6 +588,8 @@
                 <nav class="battlepass-tabs" aria-label="BlastrrPass sections">
                     <button type="button" class="battlepass-tab active" data-battlepass-tab="missions" aria-selected="true">Missions</button>
                     <button type="button" class="battlepass-tab" data-battlepass-tab="titles" aria-selected="false">Titles</button>
+                    <button type="button" class="battlepass-tab" data-battlepass-tab="shop" aria-selected="false">Shop</button>
+                    <button type="button" class="battlepass-tab" data-battlepass-tab="vault" aria-selected="false">Rewards vault</button>
                     <button type="button" class="battlepass-tab" data-battlepass-tab="leaderboard" aria-selected="false">Leaderboard</button>
                     <button type="button" class="battlepass-tab" data-battlepass-tab="profile" aria-selected="false">Profile</button>
                 </nav>
@@ -650,6 +652,28 @@
                         <span class="battlepass-xp-total"><strong id="battlepass-xp">0</strong> XP earned</span>
                     </div>
                     <div id="battlepass-level-list" class="battlepass-level-grid"></div>
+                </div>
+                <div id="battlepass-panel-shop" class="battlepass-panel" data-battlepass-panel="shop" hidden>
+                    <div class="battlepass-section-heading">
+                        <div><h2>Reward pack shop</h2><p>Spend Battle Pass points to buy and open a pack immediately. Each purchase is opened once, with rewards awarded by the server.</p></div>
+                        <span class="battlepass-xp-total"><strong id="battlepass-shop-points">0</strong> points</span>
+                    </div>
+                    <p id="battlepass-shop-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+                    <div id="battlepass-pack-reveal" class="battlepass-pack-reveal" aria-live="polite"></div>
+                    <div id="battlepass-pack-shop" class="battlepass-pack-shop"></div>
+                </div>
+                <div id="battlepass-panel-vault" class="battlepass-panel" data-battlepass-panel="vault" hidden>
+                    <div class="battlepass-section-heading">
+                        <div><h2>Your rewards vault</h2><p>Account, XP, and points rewards are applied automatically. Use a discount certificate to open checkout for an eligible account.</p></div>
+                    </div>
+                    <section class="battlepass-vault-section">
+                        <h3>Discount certificates</h3>
+                        <div id="battlepass-vault-certificates" class="battlepass-vault-list"></div>
+                    </section>
+                    <section class="battlepass-vault-section">
+                        <h3>Reward history</h3>
+                        <div id="battlepass-vault-rewards" class="battlepass-vault-list"></div>
+                    </section>
                 </div>
                 <div id="battlepass-panel-leaderboard" class="battlepass-panel" data-battlepass-panel="leaderboard" hidden>
                     <div class="battlepass-section-heading">
@@ -931,7 +955,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="applied-promo">Creator promo code</label>
+                    <label for="applied-promo">Promo or reward discount code</label>
                     <div class="plans-promo-entry">
                         <input type="text" id="applied-promo" placeholder="Enter code (e.g. VIP90)">
                         <button class="btn-wallet" onclick="applyPromo()">Apply</button>
@@ -1080,7 +1104,7 @@
                 <p class="support-note">Create or update the plans users can buy. Deactivate a plan to remove it from sale without changing accounts that already use it.</p>
                 <form id="admin-plan-create-form" class="admin-plan-form">
                     <div class="form-group"><label for="admin-plan-name">Plan name</label><input id="admin-plan-name" name="name" type="text" maxlength="100" required></div>
-                    <div class="form-group"><label for="admin-plan-base-price">List price before standard discount (USDT)</label><input id="admin-plan-base-price" name="base_price_usdt" type="number" min="0.01" step="0.01" required></div>
+                    <div class="form-group"><label for="admin-plan-base-price">Full account price (USDT)</label><input id="admin-plan-base-price" name="base_price_usdt" type="number" min="0.01" step="0.01" required></div>
                     <div class="form-group"><label for="admin-plan-capital">Simulated capital</label><input id="admin-plan-capital" name="simulated_capital" type="number" min="0.01" step="0.01" required></div>
                     <div class="form-group"><label for="admin-plan-target">Profit target</label><input id="admin-plan-target" name="profit_target" type="number" min="0" step="0.01" required></div>
                     <div class="form-group"><label for="admin-plan-drawdown">Max drawdown / MLL (%)</label><input id="admin-plan-drawdown" name="max_drawdown_pct" type="number" min="0" max="100" step="0.01" required></div>
@@ -1200,16 +1224,60 @@
             </div>
             <div id="admin-battlepass-panel" class="admin-section-panel" role="tabpanel" hidden>
                 <div class="card">
-                    <div class="card-title">Standard purchase discount</div>
-                    <p class="support-note">This percentage applies to all plan purchases. Battle-pass reward codes add their discount to this standard rate, capped at 100%.</p>
+                    <div class="card-title">Discount for applied creator and legacy codes</div>
+                    <p class="support-note">This discount is applied only after a buyer enters and applies a creator or legacy Battle Pass code. Without a code, checkout charges the full account price. Reward-pack discount certificates replace other codes.</p>
                     <form id="admin-battlepass-settings-form" class="admin-search-form">
                         <div class="form-group">
-                            <label for="admin-standard-discount">Standard discount (%)</label>
+                            <label for="admin-standard-discount">Creator / legacy code discount (%)</label>
                             <input id="admin-standard-discount" type="number" min="0" max="100" step="0.01" required>
                         </div>
-                        <button class="btn-wallet" type="submit">Save standard discount</button>
+                        <button class="btn-wallet" type="submit">Save code discount</button>
                     </form>
                     <p id="admin-battlepass-settings-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+                </div>
+                <div class="card battlepass-admin-shop">
+                    <div class="card-title">Reward shop · Packs and rewards</div>
+                    <nav class="admin-section-tabs" aria-label="Battle Pass reward shop management">
+                        <button type="button" class="admin-section-tab active" data-battlepass-admin-tab="packs" aria-selected="true">Packs</button>
+                        <button type="button" class="admin-section-tab" data-battlepass-admin-tab="rewards" aria-selected="false">Rewards</button>
+                    </nav>
+                    <section class="battlepass-admin-shop-panel" data-battlepass-admin-panel="packs">
+                        <h3>Create or edit a pack</h3>
+                        <form id="admin-battlepass-pack-form" class="admin-search-form battlepass-admin-editor">
+                            <input id="admin-battlepass-pack-id" type="hidden">
+                            <div class="form-group"><label for="admin-battlepass-pack-name">Pack name</label><input id="admin-battlepass-pack-name" type="text" minlength="2" maxlength="60" required></div>
+                            <div class="form-group"><label for="admin-battlepass-pack-cost">Cost (points)</label><input id="admin-battlepass-pack-cost" type="number" min="0" step="1" required></div>
+                            <label class="battlepass-active-toggle"><input id="admin-battlepass-pack-active" type="checkbox" checked> Active</label>
+                            <div class="battlepass-admin-pool-editor">
+                                <div class="battlepass-admin-pool-heading"><strong>Reward pool</strong><button class="battlepass-secondary-button" type="button" id="admin-battlepass-add-pack-reward">Add reward item</button></div>
+                                <div id="admin-battlepass-pack-reward-rows" class="battlepass-admin-pool-rows"></div>
+                                <small>Odds must total exactly 100%. A reward cap of 0 means unlimited drops; reaching any cap disables the entire pack.</small>
+                            </div>
+                            <button class="btn-wallet" type="submit">Save pack</button>
+                            <button class="battlepass-secondary-button" type="button" id="admin-battlepass-pack-reset">New pack</button>
+                        </form>
+                        <p id="admin-battlepass-pack-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+                        <div id="admin-battlepass-pack-list" class="battlepass-admin-shop-list"></div>
+                    </section>
+                    <section class="battlepass-admin-shop-panel" data-battlepass-admin-panel="rewards" hidden>
+                        <h3>Create or edit a reward</h3>
+                        <form id="admin-battlepass-reward-form" class="admin-search-form battlepass-admin-editor">
+                            <input id="admin-battlepass-reward-id" type="hidden">
+                            <div class="form-group"><label for="admin-battlepass-reward-name">Reward name</label><input id="admin-battlepass-reward-name" type="text" minlength="2" maxlength="100" required></div>
+                            <div class="form-group"><label for="admin-battlepass-reward-description">Certificate / reward description</label><input id="admin-battlepass-reward-description" type="text" minlength="3" maxlength="500" required></div>
+                            <div class="form-group"><label for="admin-battlepass-reward-type">Reward type</label><select id="admin-battlepass-reward-type"><option value="ACCOUNT">Account</option><option value="DISCOUNT">Discount</option><option value="XP">XP</option><option value="POINTS">Points</option></select></div>
+                            <div class="form-group" data-reward-field="plan"><label for="admin-battlepass-reward-plan">Account type</label><select id="admin-battlepass-reward-plan" required></select></div>
+                            <div class="form-group" data-reward-field="discount"><label for="admin-battlepass-reward-discount">Discount (%)</label><input id="admin-battlepass-reward-discount" type="number" min="91" max="98" step="1"></div>
+                            <div class="form-group" data-reward-field="xp"><label for="admin-battlepass-reward-xp">XP award</label><input id="admin-battlepass-reward-xp" type="number" min="0" step="1" value="0"></div>
+                            <div class="form-group" data-reward-field="points"><label for="admin-battlepass-reward-points">Points award</label><input id="admin-battlepass-reward-points" type="number" min="0" step="1" value="0"></div>
+                            <div class="form-group"><label for="admin-battlepass-reward-quantity">Reward quantity</label><input id="admin-battlepass-reward-quantity" type="number" min="1" max="1000" step="1" value="1" required></div>
+                            <label class="battlepass-active-toggle"><input id="admin-battlepass-reward-active" type="checkbox" checked> Active</label>
+                            <button class="btn-wallet" type="submit">Save reward</button>
+                            <button class="battlepass-secondary-button" type="button" id="admin-battlepass-reward-reset">New reward</button>
+                        </form>
+                        <p id="admin-battlepass-reward-feedback" class="support-feedback" role="status" aria-live="polite"></p>
+                        <div id="admin-battlepass-reward-list" class="battlepass-admin-shop-list"></div>
+                    </section>
                 </div>
                 <div class="card admin-battlepass-settings">
                     <div class="card-title">XP and points per plan purchased</div>

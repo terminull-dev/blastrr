@@ -32,6 +32,7 @@ const { isLimitOrderTriggered } = require('./limitOrderRules');
 const { calculateTradePerformance } = require('./performanceRules');
 const { MarketDataService } = require('./marketDataService');
 const { createMarketDataProviders } = require('./marketDataProviders');
+const { selectWeightedReward, validatePackRewardPool } = require('./battlePassRewards');
 const {
   SESSION_LIMIT_PER_IP,
   SESSION_IDLE_TIMEOUT_MS,
@@ -168,7 +169,127 @@ const walletActionLimiter = createRateLimiter(30, 60000, req => req.walletAddres
 const chartLimiter = createRateLimiter(120, 60000, req => `${req.ip || 'unknown'}:${req.walletAddress || 'unknown'}`);
 const publicActivityLimiter = createRateLimiter(60, 60000);
 
+function initializeBattlePassPacks(callback = () => {}) {
+  const dbGet = (sql, params = []) => new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
+  });
+  const dbAll = (sql, params = []) => new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
+  });
+  const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) return reject(err);
+      resolve(this);
+    });
+  });
+  const tiers = [
+    { name: 'Paper', points: 100, xp: 500, rewardPoints: 100, discount: 91 },
+    { name: 'Wood', points: 200, xp: 1000, rewardPoints: 200, discount: 92 },
+    { name: 'Copper', points: 350, xp: 1500, rewardPoints: 300, discount: 93 },
+    { name: 'Bronze', points: 550, xp: 2500, rewardPoints: 400, discount: 94 },
+    { name: 'Iron', points: 800, xp: 3500, rewardPoints: 500, discount: 95 },
+    { name: 'Steel', points: 1100, xp: 5000, rewardPoints: 650, discount: 96 },
+    { name: 'Titanium', points: 1500, xp: 7000, rewardPoints: 800, discount: 97 },
+    { name: 'Silver', points: 2000, xp: 10000, rewardPoints: 1000, discount: 97 },
+    { name: 'Gold', points: 2600, xp: 15000, rewardPoints: 1500, discount: 98 }
+  ];
+  (async () => {
+    const plans = await dbAll('SELECT id, name FROM plans WHERE active = 1 ORDER BY id');
+    const accountOdds = 1;
+    const pointsOdds = 56 - plans.length;
+    if (pointsOdds <= 0) throw new Error('The active plan catalog is too large to seed balanced pack odds.');
+    const accountRewards = [];
+    for (const plan of plans) {
+      const name = `Account reward: ${plan.name}`;
+      await dbRun(
+        `INSERT OR IGNORE INTO battlepass_rewards
+         (name, description, reward_type, plan_id, quantity, active)
+         VALUES (?, ?, 'ACCOUNT', ?, 1, 1)`,
+        [name, `One ${plan.name} trading account, automatically allocated when this pack is opened.`, plan.id]
+      );
+      accountRewards.push(await dbGet('SELECT id FROM battlepass_rewards WHERE name = ?', [name]));
+    }
+    for (const tier of tiers) {
+      const rewards = [
+        {
+          name: `${tier.discount}% account discount`,
+          description: `${tier.discount}% off one account at checkout. The certificate is single-use and bound to the winning wallet.`,
+          reward_type: 'DISCOUNT',
+          discount_pct: tier.discount,
+          xp_amount: 0,
+          points_amount: 0,
+          quantity: 1
+        },
+        {
+          name: `${tier.name} XP bonus`,
+          description: `Instantly add ${tier.xp.toLocaleString()} XP to your Battle Pass balance.`,
+          reward_type: 'XP',
+          discount_pct: null,
+          xp_amount: tier.xp,
+          points_amount: 0,
+          quantity: 1
+        },
+        {
+          name: `${tier.name} points bonus`,
+          description: `Instantly add ${tier.rewardPoints.toLocaleString()} Battle Pass points to your balance.`,
+          reward_type: 'POINTS',
+          discount_pct: null,
+          xp_amount: 0,
+          points_amount: tier.rewardPoints,
+          quantity: 1
+        }
+      ];
+      for (const reward of rewards) {
+        await dbRun(
+          `INSERT OR IGNORE INTO battlepass_rewards
+           (name, description, reward_type, discount_pct, xp_amount, points_amount, quantity, active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [
+            reward.name, reward.description, reward.reward_type, reward.discount_pct,
+            reward.xp_amount, reward.points_amount, reward.quantity
+          ]
+        );
+      }
+      await dbRun(
+        'INSERT OR IGNORE INTO battlepass_packs (name, points_cost, active) VALUES (?, ?, 1)',
+        [tier.name, tier.points]
+      );
+      const pack = await dbGet('SELECT id FROM battlepass_packs WHERE name = ?', [tier.name]);
+      const existingEntries = await dbGet('SELECT COUNT(*) AS count FROM battlepass_pack_rewards WHERE pack_id = ?', [pack.id]);
+      if (Number(existingEntries?.count) > 0) continue;
+      const discountReward = await dbGet('SELECT id FROM battlepass_rewards WHERE name = ?', [`${tier.discount}% account discount`]);
+      const xpReward = await dbGet('SELECT id FROM battlepass_rewards WHERE name = ?', [`${tier.name} XP bonus`]);
+      const pointsReward = await dbGet('SELECT id FROM battlepass_rewards WHERE name = ?', [`${tier.name} points bonus`]);
+      for (const accountReward of accountRewards) {
+        if (!accountReward) continue;
+        await dbRun(
+          'INSERT INTO battlepass_pack_rewards (pack_id, reward_id, odds, max_drops) VALUES (?, ?, ?, 0)',
+          [pack.id, accountReward.id, accountOdds]
+        );
+      }
+      await dbRun(
+        'INSERT INTO battlepass_pack_rewards (pack_id, reward_id, odds, max_drops) VALUES (?, ?, 8, 100)',
+        [pack.id, discountReward.id]
+      );
+      await dbRun(
+        'INSERT INTO battlepass_pack_rewards (pack_id, reward_id, odds, max_drops) VALUES (?, ?, 36, 0)',
+        [pack.id, xpReward.id]
+      );
+      await dbRun(
+        'INSERT INTO battlepass_pack_rewards (pack_id, reward_id, odds, max_drops) VALUES (?, ?, ?, 0)',
+        [pack.id, pointsReward.id, pointsOdds]
+      );
+    }
+  })().then(() => callback(null)).catch(error => {
+    console.error('Unable to initialize Battle Pass reward packs:', error.message);
+    callback(error);
+  });
+}
+
 function seedPlans() {
+  db.run('UPDATE plans SET price_usdt = base_price_usdt', priceErr => {
+    if (priceErr) console.error('Unable to reset plan prices to full price:', priceErr.message);
+  });
   const initializeRewards = () => db.run(
     `INSERT OR IGNORE INTO battlepass_plan_rewards (plan_id, xp_reward, points_reward)
      SELECT id, 1000, 100 FROM plans WHERE active = 1`,
@@ -176,7 +297,10 @@ function seedPlans() {
       if (rewardErr) return console.error('Unable to initialize battle pass plan rewards:', rewardErr.message);
       syncBattlePassPlanTasks(taskErr => {
         if (taskErr) return console.error('Unable to initialize plan purchase tasks:', taskErr.message);
-        console.log(`Initialized missing plans from config/plans.json.`);
+        initializeBattlePassPacks(packErr => {
+          if (packErr) return;
+          console.log(`Initialized missing plans and Battle Pass reward packs from config/plans.json.`);
+        });
       }, true);
     }
   );
@@ -1921,10 +2045,8 @@ app.post('/api/admin/plans/save', sensitiveLimiter, requireTradeSignature, requi
       fields.max_single_day_profit_pct < 0 || fields.max_single_day_profit_pct > 100) {
     return res.status(400).json({ error: 'Enter a plan name, valid prices and capital, and valid risk percentages from 0 to 100.' });
   }
-  db.get('SELECT standard_discount_pct FROM battlepass_settings WHERE id = 1', [], (settingsErr, settings) => {
-    if (settingsErr) return res.status(500).json({ error: 'Unable to load the standard discount.' });
-    const discountPct = Math.max(0, Math.min(100, Number(settings?.standard_discount_pct ?? 90)));
-    const salePrice = Math.round(fields.base_price_usdt * (100 - discountPct)) / 100;
+  {
+    const salePrice = fields.base_price_usdt;
     db.get(
       `SELECT id FROM plans WHERE name = ? COLLATE NOCASE AND (? IS NULL OR id != ?) LIMIT 1`,
       [name, planId, planId],
@@ -1979,7 +2101,7 @@ app.post('/api/admin/plans/save', sensitiveLimiter, requireTradeSignature, requi
         );
       }
     );
-  });
+  }
 });
 
 app.post('/api/admin/battlepass/load', sensitiveLimiter, requireTradeSignature, requireAdminWallet, (req, res) => {
@@ -2008,6 +2130,309 @@ app.post('/api/admin/battlepass/load', sensitiveLimiter, requireTradeSignature, 
       );
     });
   });
+});
+
+function insertBattlePassPackCapNotification(pack, reward, callback) {
+  const maxDrops = Number(reward.max_drops);
+  const eventKey = `reward-pack-cap:${pack.id}:${reward.id}:${maxDrops}`;
+  const message = `${pack.name} pack is out of stock: ${reward.name} reached its global cap of ${maxDrops} drops.`;
+  db.run(
+    `INSERT OR IGNORE INTO admin_notifications (event_key, event_type, message, metadata_json)
+     VALUES (?, 'REWARD_PACK_OUT_OF_STOCK', ?, ?)`,
+    [eventKey, message, JSON.stringify({
+      pack_id: Number(pack.id),
+      reward_id: Number(reward.id),
+      max_drops: maxDrops
+    })],
+    callback
+  );
+}
+
+function disableCappedBattlePassPacks(callback) {
+  db.serialize(() => {
+    db.run('BEGIN IMMEDIATE', beginErr => {
+      if (beginErr) return callback(beginErr);
+      db.all(
+        `SELECT p.id AS pack_id, p.name AS pack_name, r.id AS reward_id, r.name AS reward_name,
+                pr.max_drops, COUNT(o.id) AS drops
+         FROM battlepass_packs p
+         JOIN battlepass_pack_rewards pr ON pr.pack_id = p.id
+         JOIN battlepass_rewards r ON r.id = pr.reward_id
+         LEFT JOIN battlepass_pack_openings o ON o.pack_id = p.id AND o.reward_id = r.id
+         WHERE p.active = 1 AND pr.max_drops > 0
+         GROUP BY p.id, r.id
+         HAVING COUNT(o.id) >= pr.max_drops`,
+        [],
+        (lookupErr, cappedRows) => {
+          if (lookupErr) return db.run('ROLLBACK', () => callback(lookupErr));
+          const packIds = [...new Set((cappedRows || []).map(row => Number(row.pack_id)))];
+          const disableNext = index => {
+            if (index >= packIds.length) {
+              return db.run('COMMIT', commitErr => {
+                if (commitErr) return db.run('ROLLBACK', () => callback(commitErr));
+                callback(null);
+              });
+            }
+            const packId = packIds[index];
+            const pack = { id: packId, name: cappedRows.find(row => Number(row.pack_id) === packId)?.pack_name || 'Pack' };
+            const rewards = cappedRows.filter(row => Number(row.pack_id) === packId);
+            db.run('UPDATE battlepass_packs SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [packId], updateErr => {
+              if (updateErr) return db.run('ROLLBACK', () => callback(updateErr));
+              const notifyNext = rewardIndex => {
+                if (rewardIndex >= rewards.length) return disableNext(index + 1);
+                const row = rewards[rewardIndex];
+                insertBattlePassPackCapNotification(pack, {
+                  id: Number(row.reward_id),
+                  name: row.reward_name,
+                  max_drops: Number(row.max_drops)
+                }, notifyErr => notifyErr
+                  ? db.run('ROLLBACK', () => callback(notifyErr))
+                  : notifyNext(rewardIndex + 1));
+              };
+              notifyNext(0);
+            });
+          };
+          disableNext(0);
+        }
+      );
+    });
+  });
+}
+
+app.post('/api/admin/battlepass/shop/load', sensitiveLimiter, requireTradeSignature, requireAdminWallet, (req, res) => {
+  disableCappedBattlePassPacks(capErr => {
+    if (capErr) return res.status(500).json({ error: 'Unable to refresh capped reward packs.' });
+    db.all(
+      'SELECT id, name, active FROM plans ORDER BY active DESC, id',
+      [],
+      (plansErr, plans) => {
+        if (plansErr) return res.status(500).json({ error: 'Unable to load account types for Battle Pass rewards.' });
+        db.all(
+          `SELECT r.*, p.name AS plan_name,
+                  (SELECT COUNT(*) FROM battlepass_pack_openings o
+                   WHERE o.reward_id = r.id) AS total_drops
+           FROM battlepass_rewards r LEFT JOIN plans p ON p.id = r.plan_id
+           ORDER BY r.active DESC, r.reward_type, r.name`,
+          [],
+          (rewardsErr, rewards) => {
+            if (rewardsErr) return res.status(500).json({ error: 'Unable to load Battle Pass reward definitions.' });
+            db.all(
+              `SELECT p.id AS pack_id, p.name AS pack_name, p.points_cost, p.active AS pack_active,
+                      pr.reward_id, pr.odds, pr.max_drops, r.name AS reward_name,
+                      r.description AS reward_description, r.reward_type, r.plan_id,
+                      r.discount_pct, r.xp_amount, r.points_amount, r.quantity, r.active AS reward_active,
+                      pl.name AS plan_name,
+                      (SELECT COUNT(*) FROM battlepass_pack_openings o
+                       WHERE o.pack_id = p.id AND o.reward_id = r.id) AS drops
+               FROM battlepass_packs p
+               LEFT JOIN battlepass_pack_rewards pr ON pr.pack_id = p.id
+               LEFT JOIN battlepass_rewards r ON r.id = pr.reward_id
+               LEFT JOIN plans pl ON pl.id = r.plan_id
+               ORDER BY p.id, r.reward_type, r.name`,
+              [],
+              (packsErr, rows) => {
+                if (packsErr) return res.status(500).json({ error: 'Unable to load Battle Pass pack reward pools.' });
+                const packsById = new Map();
+                for (const row of rows || []) {
+                  let pack = packsById.get(Number(row.pack_id));
+                  if (!pack) {
+                    pack = {
+                      id: Number(row.pack_id),
+                      name: row.pack_name,
+                      points_cost: Number(row.points_cost),
+                      active: Number(row.pack_active) === 1,
+                      rewards: []
+                    };
+                    packsById.set(pack.id, pack);
+                  }
+                  if (row.reward_id == null) continue;
+                  pack.rewards.push({
+                    reward_id: Number(row.reward_id),
+                    odds: Number(row.odds),
+                    max_drops: Number(row.max_drops),
+                    drops: Number(row.drops),
+                    cap_reached: Number(row.max_drops) > 0 && Number(row.drops) >= Number(row.max_drops),
+                    name: row.reward_name,
+                    description: row.reward_description,
+                    reward_type: row.reward_type,
+                    plan_id: row.plan_id == null ? null : Number(row.plan_id),
+                    plan_name: row.plan_name,
+                    discount_pct: row.discount_pct == null ? null : Number(row.discount_pct),
+                    xp_amount: Number(row.xp_amount),
+                    points_amount: Number(row.points_amount),
+                    quantity: Number(row.quantity),
+                    active: Number(row.reward_active) === 1
+                  });
+                }
+                res.json({ packs: [...packsById.values()], rewards: rewards || [], plans: plans || [] });
+              }
+            );
+          }
+        );
+      }
+    );
+  });
+});
+
+app.post('/api/admin/battlepass/rewards/save', sensitiveLimiter, requireTradeSignature, requireAdminWallet, (req, res) => {
+  const body = req.body || {};
+  const rewardId = body.reward_id == null ? null : Number(body.reward_id);
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const description = typeof body.description === 'string' ? body.description.trim() : '';
+  const rewardType = typeof body.reward_type === 'string' ? body.reward_type.toUpperCase() : '';
+  const planId = body.plan_id == null || body.plan_id === '' ? null : Number(body.plan_id);
+  const discountPct = body.discount_pct == null || body.discount_pct === '' ? null : Number(body.discount_pct);
+  const xpAmount = Number(body.xp_amount ?? 0);
+  const pointsAmount = Number(body.points_amount ?? 0);
+  const quantity = Number(body.quantity ?? 1);
+  const active = body.active === true || body.active === 1 ? 1
+    : body.active === false || body.active === 0 ? 0 : null;
+  const validTypes = ['ACCOUNT', 'DISCOUNT', 'XP', 'POINTS'];
+  if ((rewardId !== null && (!Number.isInteger(rewardId) || rewardId < 1)) ||
+      name.length < 2 || name.length > 100 || description.length < 3 || description.length > 500 ||
+      !validTypes.includes(rewardType) || active === null ||
+      !Number.isInteger(quantity) || quantity < 1 || quantity > 1000 ||
+      !Number.isInteger(xpAmount) || xpAmount < 0 ||
+      !Number.isInteger(pointsAmount) || pointsAmount < 0 ||
+      (planId !== null && (!Number.isInteger(planId) || planId < 1)) ||
+      (rewardType === 'ACCOUNT' && (!Number.isInteger(planId) || planId < 1)) ||
+      (rewardType === 'DISCOUNT' && (!Number.isFinite(discountPct) || discountPct < 91 || discountPct > 98)) ||
+      (rewardType === 'XP' && xpAmount < 1) ||
+      (rewardType === 'POINTS' && pointsAmount < 1)) {
+    return res.status(400).json({ error: 'Enter a reward name and description, a valid reward type, quantity, and its required account type, 91–98% discount, XP, or points amount.' });
+  }
+  const normalizedPlanId = rewardType === 'ACCOUNT' ? planId : rewardType === 'DISCOUNT' ? planId : null;
+  const normalizedDiscount = rewardType === 'DISCOUNT' ? discountPct : null;
+  db.get('SELECT id FROM plans WHERE id = ? AND active = 1', [normalizedPlanId], (planErr, plan) => {
+    if (planErr) return res.status(500).json({ error: 'Unable to verify the reward account type.' });
+    if (rewardType === 'ACCOUNT' && !plan) return res.status(400).json({ error: 'Choose an existing account type for the account reward.' });
+    if (rewardType === 'DISCOUNT' && normalizedPlanId !== null && !plan) return res.status(400).json({ error: 'Choose an existing account type or leave it unrestricted.' });
+    const values = [name, description, rewardType, normalizedPlanId, normalizedDiscount, xpAmount, pointsAmount, quantity, active];
+    const sql = rewardId === null
+      ? `INSERT INTO battlepass_rewards
+         (name, description, reward_type, plan_id, discount_pct, xp_amount, points_amount, quantity, active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      : `UPDATE battlepass_rewards SET name = ?, description = ?, reward_type = ?, plan_id = ?,
+         discount_pct = ?, xp_amount = ?, points_amount = ?, quantity = ?, active = ?,
+         updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+    if (rewardId !== null) values.push(rewardId);
+    db.run(sql, values, function(saveErr) {
+      if (saveErr?.code === 'SQLITE_CONSTRAINT') return res.status(409).json({ error: 'A reward with that name already exists, or the selected account type is invalid.' });
+      if (saveErr) return res.status(500).json({ error: 'Unable to save the Battle Pass reward.' });
+      if (rewardId !== null && this.changes !== 1) return res.status(404).json({ error: 'Battle Pass reward not found.' });
+      res.json({ success: true, reward_id: rewardId || this.lastID });
+    });
+  });
+});
+
+app.post('/api/admin/battlepass/packs/save', sensitiveLimiter, requireTradeSignature, requireAdminWallet, (req, res) => {
+  const body = req.body || {};
+  const packId = body.pack_id == null ? null : Number(body.pack_id);
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const pointsCost = Number(body.points_cost);
+  const active = body.active === true || body.active === 1 ? 1
+    : body.active === false || body.active === 0 ? 0 : null;
+  const entries = Array.isArray(body.rewards) ? body.rewards : [];
+  const oddsValidation = validatePackRewardPool(entries);
+  if ((packId !== null && (!Number.isInteger(packId) || packId < 1)) ||
+      name.length < 2 || name.length > 60 || !Number.isInteger(pointsCost) || pointsCost < 0 ||
+      active === null || !oddsValidation.valid) {
+    return res.status(400).json({ error: oddsValidation.error || 'Enter a pack name, a nonnegative points cost, and its active state.' });
+  }
+  db.all(
+    `SELECT id FROM battlepass_rewards
+     WHERE active = 1 AND id IN (${entries.map(() => '?').join(',')})`,
+    entries.map(entry => Number(entry.reward_id)),
+    (rewardsErr, rewards) => {
+      if (rewardsErr) return res.status(500).json({ error: 'Unable to verify the selected pack rewards.' });
+      if ((rewards || []).length !== entries.length) {
+        return res.status(400).json({ error: 'Every pack pool reward must be active. Update the reward catalog before saving this pack.' });
+      }
+      const savePack = () => db.serialize(() => {
+        db.run('BEGIN IMMEDIATE', beginErr => {
+          if (beginErr) return res.status(500).json({ error: 'Unable to start the pack update.' });
+          const rollback = (status, error) => db.run('ROLLBACK', () => res.status(status).json({ error }));
+          const writeEntries = (id, index) => {
+            if (index >= entries.length) {
+              return db.run('COMMIT', commitErr => {
+                if (commitErr) return rollback(500, 'Unable to commit the pack reward pool.');
+                disableCappedBattlePassPacks(capErr => {
+                  if (capErr) return res.status(500).json({ error: 'Pack saved, but capped packs could not be refreshed.' });
+                  res.json({ success: true, pack_id: id });
+                });
+              });
+            }
+            const entry = entries[index];
+            db.run(
+              'INSERT INTO battlepass_pack_rewards (pack_id, reward_id, odds, max_drops) VALUES (?, ?, ?, ?)',
+              [id, Number(entry.reward_id), Number(entry.odds), Number(entry.max_drops)],
+              insertErr => insertErr
+                ? rollback(500, 'Unable to save the pack reward pool.')
+                : writeEntries(id, index + 1)
+            );
+          };
+          const saveEntries = id => db.run(
+            'DELETE FROM battlepass_pack_rewards WHERE pack_id = ?',
+            [id],
+            deleteErr => deleteErr ? rollback(500, 'Unable to replace the pack reward pool.') : writeEntries(id, 0)
+          );
+          if (packId === null) {
+            db.run(
+              'INSERT INTO battlepass_packs (name, points_cost, active) VALUES (?, ?, ?)',
+              [name, pointsCost, active],
+              function(insertErr) {
+                if (insertErr?.code === 'SQLITE_CONSTRAINT') return rollback(409, 'A pack with that name already exists.');
+                if (insertErr) return rollback(500, 'Unable to create the Battle Pass pack.');
+                saveEntries(this.lastID);
+              }
+            );
+          } else {
+            db.run(
+              `UPDATE battlepass_packs SET name = ?, points_cost = ?, active = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [name, pointsCost, active, packId],
+              function(updateErr) {
+                if (updateErr?.code === 'SQLITE_CONSTRAINT') return rollback(409, 'A pack with that name already exists.');
+                if (updateErr) return rollback(500, 'Unable to update the Battle Pass pack.');
+                if (this.changes !== 1) return rollback(404, 'Battle Pass pack not found.');
+                saveEntries(packId);
+              }
+            );
+          }
+        });
+      });
+      if (packId === null) return savePack();
+      db.get(
+        'SELECT id, name FROM battlepass_packs WHERE id = ?',
+        [packId],
+        (packErr, existingPack) => {
+          if (packErr) return res.status(500).json({ error: 'Unable to verify the Battle Pass pack.' });
+          if (!existingPack) return res.status(404).json({ error: 'Battle Pass pack not found.' });
+          const checkCappedReward = (index, callback) => {
+            if (index >= entries.length) return callback(null);
+            const entry = entries[index];
+            if (Number(entry.max_drops) === 0) return checkCappedReward(index + 1, callback);
+            db.get(
+              `SELECT COUNT(*) AS drops, r.name FROM battlepass_pack_openings o
+               JOIN battlepass_rewards r ON r.id = o.reward_id
+               WHERE o.pack_id = ? AND o.reward_id = ?`,
+              [packId, Number(entry.reward_id)],
+              (countErr, count) => {
+                if (countErr) return callback(countErr);
+                if (Number(count?.drops) >= Number(entry.max_drops) && active === 1) {
+                  return callback(new Error(`${count.name} has already reached its global drop cap. Increase the cap or leave this pack inactive.`));
+                }
+                checkCappedReward(index + 1, callback);
+              }
+            );
+          };
+          checkCappedReward(0, capErr => capErr
+            ? res.status(capErr.message.includes('global drop cap') ? 400 : 500).json({ error: capErr.message })
+            : savePack());
+        }
+      );
+    }
+  );
 });
 
 app.get('/api/battlepass', requireWalletSession, (req, res) => {
@@ -2142,6 +2567,444 @@ app.get('/api/battlepass', requireWalletSession, (req, res) => {
       );
     }
   );
+  });
+});
+
+app.get('/api/battlepass/packs', requireWalletSession, (req, res) => {
+  disableCappedBattlePassPacks(capErr => {
+    if (capErr) return res.status(500).json({ error: 'Unable to refresh reward pack availability.' });
+    db.all(
+      `SELECT p.id AS pack_id, p.name AS pack_name, p.points_cost, p.active AS pack_active,
+              pr.reward_id, pr.odds, pr.max_drops, r.name AS reward_name,
+              r.description AS reward_description, r.reward_type, r.plan_id,
+              r.discount_pct, r.xp_amount, r.points_amount, r.quantity, r.active AS reward_active,
+              pl.name AS plan_name, pl.active AS plan_active,
+              (SELECT COUNT(*) FROM battlepass_pack_openings o
+               WHERE o.pack_id = p.id AND o.reward_id = r.id) AS drops
+       FROM battlepass_packs p
+       LEFT JOIN battlepass_pack_rewards pr ON pr.pack_id = p.id
+       LEFT JOIN battlepass_rewards r ON r.id = pr.reward_id
+       LEFT JOIN plans pl ON pl.id = r.plan_id
+       ORDER BY p.id, r.reward_type, r.name`,
+      [],
+      (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Unable to load Battle Pass packs.' });
+        const packsById = new Map();
+        for (const row of rows || []) {
+          let pack = packsById.get(Number(row.pack_id));
+          if (!pack) {
+            pack = {
+              id: Number(row.pack_id),
+              name: row.pack_name,
+              points_cost: Number(row.points_cost),
+              active: Number(row.pack_active) === 1,
+              rewards: []
+            };
+            packsById.set(pack.id, pack);
+          }
+          if (row.reward_id == null) continue;
+          pack.rewards.push({
+            id: Number(row.reward_id),
+            name: row.reward_name,
+            description: row.reward_description,
+            reward_type: row.reward_type,
+            plan_id: row.plan_id == null ? null : Number(row.plan_id),
+            plan_name: row.plan_name,
+            plan_active: Number(row.plan_active) === 1,
+            discount_pct: row.discount_pct == null ? null : Number(row.discount_pct),
+            xp_amount: Number(row.xp_amount),
+            points_amount: Number(row.points_amount),
+            quantity: Number(row.quantity),
+            odds: Number(row.odds),
+            max_drops: Number(row.max_drops),
+            drops: Number(row.drops),
+            cap_reached: Number(row.max_drops) > 0 && Number(row.drops) >= Number(row.max_drops),
+            active: Number(row.reward_active) === 1
+          });
+        }
+        const packs = [...packsById.values()].map(pack => {
+          const validation = validatePackRewardPool(pack.rewards.map(reward => ({
+            reward_id: reward.id,
+            odds: reward.odds,
+            max_drops: reward.max_drops
+          })));
+          const cappedReward = pack.rewards.find(reward => reward.cap_reached);
+          const unavailableReward = pack.rewards.find(reward =>
+            !reward.active || (reward.reward_type === 'ACCOUNT' && !reward.plan_active));
+          pack.odds_total = validation.total;
+          pack.out_of_stock = !pack.active || !validation.valid || Boolean(cappedReward) || Boolean(unavailableReward);
+          pack.unavailable_reason = cappedReward
+            ? `${cappedReward.name} has reached its drop cap.`
+            : unavailableReward
+              ? `${unavailableReward.name} is unavailable.`
+              : !validation.valid ? validation.error : pack.active ? null : 'Out of stock.';
+          return pack;
+        });
+        db.get(
+          'SELECT points FROM battlepass_users WHERE LOWER(wallet_address) = LOWER(?)',
+          [req.walletAddress],
+          (balanceErr, profile) => {
+            if (balanceErr) return res.status(500).json({ error: 'Unable to load your Battle Pass points.' });
+            res.json({ packs, points: Number(profile?.points || 0) });
+          }
+        );
+      }
+    );
+  });
+});
+
+app.get('/api/battlepass/vault', requireWalletSession, (req, res) => {
+  db.all(
+    `SELECT o.*, p.name AS pack_name, r.plan_id AS reward_plan_id,
+            rp.name AS reward_plan_name,
+            (SELECT COUNT(*) FROM battlepass_discount_certificates c WHERE c.opening_id = o.id) AS certificate_count
+     FROM battlepass_pack_openings o
+     JOIN battlepass_packs p ON p.id = o.pack_id
+     JOIN battlepass_rewards r ON r.id = o.reward_id
+     LEFT JOIN plans rp ON rp.id = r.plan_id
+     WHERE LOWER(o.wallet_address) = LOWER(?)
+     ORDER BY o.created_at DESC`,
+    [req.walletAddress],
+    (openingsErr, openings) => {
+      if (openingsErr) return res.status(500).json({ error: 'Unable to load your reward vault.' });
+      db.all(
+        `SELECT c.code, c.opening_id, c.discount_pct, c.eligible_plan_id, c.redeemed_at,
+                c.created_at, p.name AS eligible_plan_name, o.reward_name, o.reward_description
+         FROM battlepass_discount_certificates c
+         JOIN battlepass_pack_openings o ON o.id = c.opening_id
+         LEFT JOIN plans p ON p.id = c.eligible_plan_id
+         WHERE LOWER(c.wallet_address) = LOWER(?)
+         ORDER BY c.created_at DESC`,
+        [req.walletAddress],
+        (certificatesErr, certificates) => {
+          if (certificatesErr) return res.status(500).json({ error: 'Unable to load your discount certificates.' });
+          const vault = (openings || []).map(opening => {
+            let accountIds;
+            try {
+              accountIds = JSON.parse(opening.account_ids_json);
+            } catch (parseErr) {
+              console.error('Unable to decode Battle Pass account reward history:', parseErr.message);
+              return null;
+            }
+            return {
+              id: opening.id,
+              pack_name: opening.pack_name,
+              reward_name: opening.reward_name,
+              reward_description: opening.reward_description,
+              reward_type: opening.reward_type,
+              quantity: Number(opening.quantity),
+              xp_awarded: Number(opening.xp_awarded),
+              points_awarded: Number(opening.points_awarded),
+              account_ids: accountIds,
+              account_plan_name: opening.reward_plan_name,
+              certificate_count: Number(opening.certificate_count),
+              points_spent: Number(opening.points_spent),
+              created_at: opening.created_at
+            };
+          });
+          if (vault.some(item => item === null)) return res.status(500).json({ error: 'Reward vault data could not be decoded.' });
+          res.json({ rewards: vault, certificates: certificates || [] });
+        }
+      );
+    }
+  );
+});
+
+app.post('/api/battlepass/packs/open', sensitiveLimiter, requireWalletSession, requireUserNotSuspended, (req, res) => {
+  const packId = Number(req.body?.pack_id);
+  const requestKey = typeof req.body?.request_key === 'string' ? req.body.request_key : '';
+  if (!Number.isInteger(packId) || packId < 1 ||
+      !/^[a-zA-Z0-9_-]{16,80}$/.test(requestKey)) {
+    return res.status(400).json({ error: 'Choose a valid pack and opening request.' });
+  }
+  db.serialize(() => {
+    db.run('BEGIN IMMEDIATE', beginErr => {
+      if (beginErr) return res.status(500).json({ error: 'Unable to start your pack opening.' });
+      const rollback = (status, error) => db.run('ROLLBACK', () => res.status(status).json({ error }));
+      const commitError = (error, message) => {
+        if (error) return rollback(500, message);
+        res.status(409).json({ error: message });
+      };
+      db.get(
+        `SELECT * FROM battlepass_pack_openings
+         WHERE LOWER(wallet_address) = LOWER(?) AND request_key = ?`,
+        [req.walletAddress, requestKey],
+        (existingErr, existingOpening) => {
+          if (existingErr) return rollback(500, 'Unable to check whether this pack was already opened.');
+          if (existingOpening) {
+            return db.all(
+              'SELECT code, discount_pct, eligible_plan_id FROM battlepass_discount_certificates WHERE opening_id = ?',
+              [existingOpening.id],
+              (certErr, certificates) => {
+                if (certErr) return rollback(500, 'Unable to load the previous pack result.');
+                db.get(
+                  'SELECT points FROM battlepass_users WHERE LOWER(wallet_address) = LOWER(?)',
+                  [req.walletAddress],
+                  (balanceErr, balance) => {
+                    if (balanceErr) return rollback(500, 'Unable to load your points balance.');
+                    let accountIds;
+                    try {
+                      accountIds = JSON.parse(existingOpening.account_ids_json);
+                      if (!Array.isArray(accountIds)) throw new Error('Expected an account ID array.');
+                    } catch (parseErr) {
+                      console.error('Unable to decode a retried Battle Pass opening:', parseErr.message);
+                      return rollback(500, 'The previous pack result could not be decoded.');
+                    }
+                    db.run('COMMIT', commitErr => {
+                      if (commitErr) return res.status(500).json({ error: 'Unable to return the previous pack result.' });
+                      res.json({
+                        success: true,
+                        already_opened: true,
+                        opening: {
+                          id: existingOpening.id,
+                          pack_id: Number(existingOpening.pack_id),
+                          reward_name: existingOpening.reward_name,
+                          reward_description: existingOpening.reward_description,
+                          reward_type: existingOpening.reward_type,
+                          quantity: Number(existingOpening.quantity),
+                          xp_awarded: Number(existingOpening.xp_awarded),
+                          points_awarded: Number(existingOpening.points_awarded),
+                          account_ids: accountIds,
+                          points_spent: Number(existingOpening.points_spent)
+                        },
+                        certificates: certificates || [],
+                        points: Number(balance?.points || 0)
+                      });
+                    });
+                  }
+                );
+              }
+            );
+          }
+          db.get(
+            'SELECT * FROM battlepass_packs WHERE id = ?',
+            [packId],
+            (packErr, pack) => {
+              if (packErr) return rollback(500, 'Unable to load this reward pack.');
+              if (!pack) return rollback(404, 'Battle Pass pack not found.');
+              db.all(
+                `SELECT pr.reward_id, pr.odds, pr.max_drops, r.*, pl.active AS plan_active,
+                        (SELECT COUNT(*) FROM battlepass_pack_openings o
+                         WHERE o.pack_id = pr.pack_id AND o.reward_id = pr.reward_id) AS drops
+                 FROM battlepass_pack_rewards pr
+                 JOIN battlepass_rewards r ON r.id = pr.reward_id
+                 LEFT JOIN plans pl ON pl.id = r.plan_id
+                 WHERE pr.pack_id = ? ORDER BY pr.reward_id`,
+                [packId],
+                (poolErr, pool) => {
+                  if (poolErr) return rollback(500, 'Unable to load this pack reward pool.');
+                  const capped = (pool || []).filter(entry =>
+                    Number(entry.max_drops) > 0 && Number(entry.drops) >= Number(entry.max_drops));
+                  if (capped.length) {
+                    db.run('UPDATE battlepass_packs SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [packId], updateErr => {
+                      if (updateErr) return rollback(500, 'Unable to disable this capped reward pack.');
+                      const notifyNext = index => {
+                        if (index >= capped.length) {
+                          return db.run('COMMIT', commitErr => commitError(commitErr, 'This pack is out of stock.'));
+                        }
+                        const entry = capped[index];
+                        insertBattlePassPackCapNotification(pack, entry, notifyErr => notifyErr
+                          ? rollback(500, 'Unable to notify administrators about the capped pack.')
+                          : notifyNext(index + 1));
+                      };
+                      notifyNext(0);
+                    });
+                    return;
+                  }
+                  const oddsValidation = validatePackRewardPool(pool || []);
+                  if (Number(pack.active) !== 1) return rollback(409, 'This pack is out of stock.');
+                  if (!oddsValidation.valid) return rollback(409, 'This pack is unavailable because its reward pool is invalid.');
+                  const unavailableReward = pool.find(entry =>
+                    Number(entry.active) !== 1 || (entry.reward_type === 'ACCOUNT' && Number(entry.plan_active) !== 1));
+                  if (unavailableReward) return rollback(409, `${unavailableReward.name} is currently unavailable. This pack cannot be opened.`);
+                  db.get(
+                    'SELECT points FROM battlepass_users WHERE LOWER(wallet_address) = LOWER(?)',
+                    [req.walletAddress],
+                    (balanceErr, balance) => {
+                      if (balanceErr) return rollback(500, 'Unable to load your Battle Pass points.');
+                      if (!balance || Number(balance.points) < Number(pack.points_cost)) {
+                        return rollback(409, 'You do not have enough Battle Pass points for this pack.');
+                      }
+                      let selectedReward;
+                      try {
+                        selectedReward = selectWeightedReward(pool, crypto.randomInt(10000) / 100);
+                      } catch (selectionErr) {
+                        console.error('Unable to select a Battle Pass pack reward:', selectionErr.message);
+                        return rollback(500, 'Unable to select a reward from this pack.');
+                      }
+                      db.run(
+                        `UPDATE battlepass_users
+                         SET points = points - ?, updated_at = CURRENT_TIMESTAMP
+                         WHERE LOWER(wallet_address) = LOWER(?) AND points >= ?`,
+                        [Number(pack.points_cost), req.walletAddress, Number(pack.points_cost)],
+                        function(spendErr) {
+                          if (spendErr) return rollback(500, 'Unable to spend your Battle Pass points.');
+                          if (this.changes !== 1) return rollback(409, 'Your points balance changed. Refresh and try again.');
+                          const openingId = `bpo_${crypto.randomBytes(12).toString('hex')}`;
+                          const quantity = Number(selectedReward.quantity);
+                          const accountIds = [];
+                          const allocateAccount = (index, callback) => {
+                            if (index >= quantity) return callback(null);
+                            const accountId = `acc_${crypto.randomBytes(8).toString('hex')}`;
+                            const initialBalance = Number(selectedReward.simulated_capital);
+                            db.run(
+                              `INSERT INTO accounts
+                               (id, wallet_address, plan_id, initial_balance, current_balance,
+                                current_equity, high_water_mark, daily_starting_balance, risk_day, status)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`,
+                              [
+                                accountId, req.walletAddress, Number(selectedReward.plan_id), initialBalance,
+                                initialBalance, initialBalance, initialBalance, initialBalance,
+                                new Date().toISOString().slice(0, 10)
+                              ],
+                              accountErr => {
+                                if (accountErr) return callback(accountErr);
+                                accountIds.push(accountId);
+                                allocateAccount(index + 1, callback);
+                              }
+                            );
+                          };
+                          const accountPlan = callback => {
+                            if (selectedReward.reward_type !== 'ACCOUNT') return callback(null);
+                            db.get(
+                              'SELECT simulated_capital FROM plans WHERE id = ? AND active = 1',
+                              [selectedReward.plan_id],
+                              (planErr, plan) => {
+                                if (planErr) return callback(planErr);
+                                if (!plan) return callback(new Error('The reward account type is no longer active.'));
+                                selectedReward.simulated_capital = Number(plan.simulated_capital);
+                                allocateAccount(0, callback);
+                              }
+                            );
+                          };
+                          accountPlan(accountErr => {
+                            if (accountErr) return rollback(accountErr.message.includes('no longer active') ? 409 : 500,
+                              accountErr.message.includes('no longer active') ? accountErr.message : 'Unable to allocate the account reward.');
+                            const xpAwarded = selectedReward.reward_type === 'XP'
+                              ? Number(selectedReward.xp_amount) * quantity : 0;
+                            const pointsAwarded = selectedReward.reward_type === 'POINTS'
+                              ? Number(selectedReward.points_amount) * quantity : 0;
+                            const addBalance = callback => {
+                              if (!xpAwarded && !pointsAwarded) return callback(null);
+                              db.run(
+                                `UPDATE battlepass_users
+                                 SET xp = xp + ?, points = points + ?, updated_at = CURRENT_TIMESTAMP
+                                 WHERE LOWER(wallet_address) = LOWER(?)`,
+                                [xpAwarded, pointsAwarded, req.walletAddress],
+                                balanceUpdateErr => callback(balanceUpdateErr)
+                              );
+                            };
+                            db.run(
+                              `INSERT INTO battlepass_pack_openings
+                               (id, request_key, wallet_address, pack_id, reward_id, points_spent, reward_type,
+                                reward_name, reward_description, quantity, xp_awarded, points_awarded, account_ids_json)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              [
+                                openingId, requestKey, req.walletAddress, packId, selectedReward.reward_id,
+                                Number(pack.points_cost), selectedReward.reward_type, selectedReward.name,
+                                selectedReward.description, quantity, xpAwarded, pointsAwarded,
+                                JSON.stringify(accountIds)
+                              ],
+                              insertOpeningErr => {
+                                if (insertOpeningErr) return rollback(500, 'Unable to save the pack reward to your vault.');
+                                const createCertificates = (index, codes, callback) => {
+                                  if (index >= quantity) return callback(null, codes);
+                                  const code = `BP${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
+                                  db.run(
+                                    `INSERT INTO battlepass_discount_certificates
+                                     (code, opening_id, wallet_address, reward_id, discount_pct, eligible_plan_id)
+                                     VALUES (?, ?, ?, ?, ?, ?)`,
+                                    [
+                                      code, openingId, req.walletAddress, selectedReward.reward_id,
+                                      Number(selectedReward.discount_pct), selectedReward.plan_id || null
+                                    ],
+                                    certErr => certErr ? callback(certErr) : createCertificates(index + 1, [
+                                      ...codes,
+                                      {
+                                        code,
+                                        discount_pct: Number(selectedReward.discount_pct),
+                                        eligible_plan_id: selectedReward.plan_id == null ? null : Number(selectedReward.plan_id)
+                                      }
+                                    ], callback)
+                                  );
+                                };
+                                const insertRewardEvent = callback => {
+                                  if (!xpAwarded && !pointsAwarded) return callback(null);
+                                  db.run(
+                                    `INSERT INTO battlepass_events
+                                     (id, wallet_address, event_type, reference_id, xp, points)
+                                     VALUES (?, ?, 'PACK_REWARD', ?, ?, ?)`,
+                                    [`bpe_${crypto.randomBytes(10).toString('hex')}`, req.walletAddress, openingId, xpAwarded, pointsAwarded],
+                                    callback
+                                  );
+                                };
+                                const finishOpening = certificates => addBalance(balanceUpdateErr => {
+                                  if (balanceUpdateErr) return rollback(500, 'Unable to apply your XP or points reward.');
+                                  insertRewardEvent(eventErr => {
+                                    if (eventErr) return rollback(500, 'Unable to record your reward history.');
+                                      const capReached = Number(selectedReward.max_drops) > 0 &&
+                                        Number(selectedReward.drops) + 1 >= Number(selectedReward.max_drops);
+                                      const notifyCap = next => {
+                                        if (!capReached) return next(null);
+                                        db.run(
+                                          'UPDATE battlepass_packs SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                                          [packId],
+                                          updateErr => updateErr
+                                            ? next(updateErr)
+                                            : insertBattlePassPackCapNotification(pack, selectedReward, next)
+                                        );
+                                      };
+                                      notifyCap(capErr => {
+                                        if (capErr) return rollback(500, 'Unable to record the reward cap notification.');
+                                        db.get(
+                                          'SELECT points FROM battlepass_users WHERE LOWER(wallet_address) = LOWER(?)',
+                                          [req.walletAddress],
+                                          (finalBalanceErr, finalBalance) => {
+                                            if (finalBalanceErr) return rollback(500, 'Unable to load your updated points balance.');
+                                            db.run('COMMIT', commitErr => {
+                                              if (commitErr) return res.status(500).json({ error: 'Unable to complete your pack opening.' });
+                                              res.json({
+                                                success: true,
+                                                opening: {
+                                                  id: openingId,
+                                                  pack_id: packId,
+                                                  reward_name: selectedReward.name,
+                                                  reward_description: selectedReward.description,
+                                                  reward_type: selectedReward.reward_type,
+                                                  quantity,
+                                                  xp_awarded: xpAwarded,
+                                                  points_awarded: pointsAwarded,
+                                                  account_ids: accountIds,
+                                                  points_spent: Number(pack.points_cost)
+                                                },
+                                                certificates,
+                                                points: Number(finalBalance?.points || 0),
+                                                pack_out_of_stock: capReached
+                                              });
+                                            });
+                                          }
+                                        );
+                                      });
+                                    });
+                                  });
+                                });
+                                createCertificates(0, [], (certificateErr, certificates) => {
+                                  if (certificateErr) return rollback(500, 'Unable to create your discount certificate.');
+                                  finishOpening(certificates);
+                                });
+                              }
+                            );
+                          });
+                        }
+                      );
+                    }
+                  );
+                }
+              );
+            }
+          );
+        }
+      );
   });
 });
 
@@ -2533,6 +3396,13 @@ app.get('/api/admin/operations/dashboard', requireWalletSession, requireAdminSes
                                 0 AS amount_usdt, NULL AS payment_asset, 1 AS quantity, 'Review awaiting moderation' AS plan_name,
                                 r.account_id, r.moderation_status AS status, NULL AS withdrawal_type
                          FROM user_reviews r WHERE r.moderation_status = 'PENDING'
+                         UNION ALL
+                         SELECT 'admin-notification:' || n.event_key AS event_id,
+                                n.event_type, n.created_at AS occurred_at,
+                                '' AS wallet_address, '' AS username, NULL AS tx_hash, NULL AS chain_id,
+                                0 AS amount_usdt, NULL AS payment_asset, 1 AS quantity,
+                                n.message AS plan_name, NULL AS account_id, NULL AS status, NULL AS withdrawal_type
+                         FROM admin_notifications n WHERE n.event_type = 'REWARD_PACK_OUT_OF_STOCK'
                          ORDER BY occurred_at DESC LIMIT 50`,
                         [],
                         (eventErr, events) => {
@@ -3915,8 +4785,8 @@ app.post('/api/admin/battlepass/settings', sensitiveLimiter, requireTradeSignatu
           if (updateErr) return rollback('Unable to update the standard discount.');
           if (this.changes !== 1) return rollback('Battle pass settings are unavailable.');
           db.run(
-            'UPDATE plans SET price_usdt = ROUND(base_price_usdt * (100 - ?) / 100, 2)',
-            [normalizedDiscountPct],
+            'UPDATE plans SET price_usdt = base_price_usdt',
+            [],
             priceErr => {
               if (priceErr) return rollback('Unable to synchronize plan sale prices.');
               db.run('COMMIT', commitErr => {
@@ -4227,13 +5097,46 @@ app.post('/api/referrals/withdraw', sensitiveLimiter, requireTradeSignature, (re
   });
 });
 
-app.post('/api/promo/validate', sensitiveLimiter, (req, res) => {
+app.post('/api/promo/validate', sensitiveLimiter, requireWalletSession, (req, res) => {
   const code = typeof req.body?.code === 'string' ? req.body.code.trim().toUpperCase() : '';
   if (!code) return res.json({ valid: false });
   db.get('SELECT standard_discount_pct FROM battlepass_settings WHERE id = 1', [], (settingsErr, settings) => {
     if (settingsErr) return res.status(500).json({ error: 'Unable to load current purchase discounts.' });
     const standardDiscountPct = Number(settings?.standard_discount_pct ?? 90);
-    db.get('SELECT wallet_address FROM users WHERE UPPER(discount_code) = ?', [code], (userErr, user) => {
+    db.get(
+      `SELECT code, wallet_address, discount_pct, eligible_plan_id, redeemed_at
+       FROM battlepass_discount_certificates WHERE UPPER(code) = ?`,
+      [code],
+      (certificateErr, certificate) => {
+        if (certificateErr) return res.status(500).json({ error: 'Unable to validate the discount certificate.' });
+        if (certificate) {
+          if (certificate.wallet_address.toLowerCase() !== req.walletAddress.toLowerCase()) {
+            return res.json({ valid: false, error: 'This discount certificate belongs to another wallet.' });
+          }
+          if (certificate.redeemed_at) return res.json({ valid: false, error: 'This discount certificate has already been used.' });
+          if (certificate.eligible_plan_id != null && req.body?.plan_id != null &&
+              Number(req.body.plan_id) !== Number(certificate.eligible_plan_id)) {
+            return res.json({ valid: false, error: 'This certificate can only be used for its eligible account type.' });
+          }
+          return db.get(
+            'SELECT name FROM plans WHERE id = ? AND active = 1',
+            [certificate.eligible_plan_id],
+            (planErr, eligiblePlan) => {
+              if (planErr) return res.status(500).json({ error: 'Unable to verify the eligible account type.' });
+              if (certificate.eligible_plan_id != null && !eligiblePlan) {
+                return res.json({ valid: false, error: 'This certificate’s eligible account type is currently unavailable.' });
+              }
+              res.json({
+                valid: true,
+                type: 'PACK_DISCOUNT',
+                discount_pct: Number(certificate.discount_pct),
+                eligible_plan_id: certificate.eligible_plan_id == null ? null : Number(certificate.eligible_plan_id),
+                eligible_plan_name: eligiblePlan?.name || null
+              });
+            }
+          );
+        }
+        db.get('SELECT wallet_address FROM users WHERE UPPER(discount_code) = ?', [code], (userErr, user) => {
       if (userErr) return res.status(500).json({ error: 'Unable to validate the promo code.' });
       if (user) {
         return res.json({ valid: true, type: 'CREATOR', discount_pct: standardDiscountPct });
@@ -4253,7 +5156,9 @@ app.post('/api/promo/validate', sensitiveLimiter, (req, res) => {
           });
         }
       );
-    });
+        });
+      }
+    );
   });
 });
 
@@ -4688,11 +5593,17 @@ app.post('/api/accounts/purchase', sensitiveLimiter, requireWalletSession, requi
     const levelOneCommissionPct = Math.max(0, Math.min(100, Number(referralSettings?.level_one_pct ?? 2)));
     const levelTwoCommissionPct = Math.max(0, Math.min(100, Number(referralSettings?.level_two_pct ?? 2)));
     let rewardCode = null;
+    let packCertificate = null;
     let referrerWallet = null;
     let referralCommissionPct = 10;
     let bonusDiscountPct = 0;
     if (promoCode) {
-      const [creator, coupon] = await Promise.all([
+      const [certificate, creator, coupon] = await Promise.all([
+        dbGet(
+          `SELECT code, wallet_address, discount_pct, eligible_plan_id, redeemed_at
+           FROM battlepass_discount_certificates WHERE UPPER(code) = ?`,
+          [promoCode]
+        ),
         dbGet('SELECT wallet_address, level_one_pct_override FROM users WHERE UPPER(discount_code) = ?', [promoCode]),
         dbGet(
           `SELECT code, wallet_address, discount_bonus_pct FROM battlepass_reward_codes
@@ -4700,7 +5611,17 @@ app.post('/api/accounts/purchase', sensitiveLimiter, requireWalletSession, requi
           [promoCode]
         )
       ]);
-      if (creator) {
+      if (certificate) {
+        if (certificate.wallet_address.toLowerCase() !== wallet_address.toLowerCase()) {
+          return res.status(403).json({ error: 'This discount certificate belongs to another wallet.' });
+        }
+        if (certificate.redeemed_at) return res.status(409).json({ error: 'This discount certificate has already been used.' });
+        if (certificate.eligible_plan_id != null && Number(certificate.eligible_plan_id) !== Number(plan_id)) {
+          return res.status(400).json({ error: 'This discount certificate can only be used for its eligible account type.' });
+        }
+        if (quantity !== 1) return res.status(400).json({ error: 'A discount certificate can only be used to buy one account.' });
+        packCertificate = certificate;
+      } else if (creator) {
         referrerWallet = creator.wallet_address;
         referralCommissionPct = Number(creator.level_one_pct_override ?? levelOneCommissionPct);
       } else if (coupon && coupon.wallet_address.toLowerCase() === wallet_address.toLowerCase()) {
@@ -4711,7 +5632,9 @@ app.post('/api/accounts/purchase', sensitiveLimiter, requireWalletSession, requi
       }
     }
 
-    const totalDiscountPct = Math.min(100, standardDiscountPct + bonusDiscountPct);
+    const totalDiscountPct = packCertificate
+      ? Number(packCertificate.discount_pct)
+      : promoCode ? Math.min(100, standardDiscountPct + bonusDiscountPct) : 0;
     const finalPrice = Math.round(Number(plan.base_price_usdt) * (100 - totalDiscountPct)) / 100;
     const totalPrice = Math.round(finalPrice * quantity * 100) / 100;
     const isFreeRedemption = finalPrice === 0;
@@ -4938,6 +5861,20 @@ app.post('/api/accounts/purchase', sensitiveLimiter, requireWalletSession, requi
                         );
                       });
                     });
+                  if (packCertificate) {
+                    return db.run(
+                      `UPDATE battlepass_discount_certificates
+                       SET redeemed_at = CURRENT_TIMESTAMP, purchase_tx_hash = ?
+                       WHERE code = ? AND LOWER(wallet_address) = LOWER(?) AND redeemed_at IS NULL
+                         AND (eligible_plan_id IS NULL OR eligible_plan_id = ?)`,
+                      [normalizedTxHash, packCertificate.code, wallet_address, Number(plan_id)],
+                      function(redeemErr) {
+                        if (redeemErr) return rollback(500, 'Unable to redeem the discount certificate.');
+                        if (this.changes !== 1) return rollback(409, 'This discount certificate has already been used or is not eligible for this account type.');
+                        completeProvisioning();
+                      }
+                    );
+                  }
                   if (!rewardCode) return completeProvisioning();
                   db.run(
                     `UPDATE battlepass_reward_codes SET redeemed_at = CURRENT_TIMESTAMP
