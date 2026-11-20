@@ -33,6 +33,7 @@ const { calculateTradePerformance } = require('./performanceRules');
 const { MarketDataService } = require('./marketDataService');
 const { createMarketDataProviders } = require('./marketDataProviders');
 const { selectWeightedReward, validatePackRewardPool } = require('./battlePassRewards');
+const { createBattlePassDiscountCertificates } = require('./battlePassCertificates');
 const {
   SESSION_LIMIT_PER_IP,
   SESSION_IDLE_TIMEOUT_MS,
@@ -2907,27 +2908,6 @@ app.post('/api/battlepass/packs/open', sensitiveLimiter, requireWalletSession, r
                               ],
                               insertOpeningErr => {
                                 if (insertOpeningErr) return rollback(500, 'Unable to save the pack reward to your vault.');
-                                const createCertificates = (index, codes, callback) => {
-                                  if (index >= quantity) return callback(null, codes);
-                                  const code = `BP${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
-                                  db.run(
-                                    `INSERT INTO battlepass_discount_certificates
-                                     (code, opening_id, wallet_address, reward_id, discount_pct, eligible_plan_id)
-                                     VALUES (?, ?, ?, ?, ?, ?)`,
-                                    [
-                                      code, openingId, req.walletAddress, selectedReward.reward_id,
-                                      Number(selectedReward.discount_pct), selectedReward.plan_id || null
-                                    ],
-                                    certErr => certErr ? callback(certErr) : createCertificates(index + 1, [
-                                      ...codes,
-                                      {
-                                        code,
-                                        discount_pct: Number(selectedReward.discount_pct),
-                                        eligible_plan_id: selectedReward.plan_id == null ? null : Number(selectedReward.plan_id)
-                                      }
-                                    ], callback)
-                                  );
-                                };
                                 const insertRewardEvent = callback => {
                                   if (!xpAwarded && !pointsAwarded) return callback(null);
                                   db.run(
@@ -2988,7 +2968,13 @@ app.post('/api/battlepass/packs/open', sensitiveLimiter, requireWalletSession, r
                                     });
                                   });
                                 });
-                                createCertificates(0, [], (certificateErr, certificates) => {
+                                createBattlePassDiscountCertificates({
+                                  db,
+                                  openingId,
+                                  walletAddress: req.walletAddress,
+                                  reward: selectedReward,
+                                  quantity
+                                }, (certificateErr, certificates) => {
                                   if (certificateErr) return rollback(500, 'Unable to create your discount certificate.');
                                   finishOpening(certificates);
                                 });

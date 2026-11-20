@@ -156,6 +156,7 @@ test('pack openings spend points once, respect global caps, and issue wallet-bou
   assert.match(openRoute, /BEGIN IMMEDIATE/);
   assert.match(openRoute, /points = points - \?/);
   assert.match(openRoute, /battlepass_discount_certificates/);
+  assert.match(openRoute, /createBattlePassDiscountCertificates\(\{[\s\S]*?reward: selectedReward,[\s\S]*?quantity/);
   assert.match(openRoute, /WHERE o\.pack_id = pr\.pack_id AND o\.reward_id = pr\.reward_id/);
   assert.match(openRoute, /UPDATE battlepass_packs SET active = 0/);
   assert.match(purchaseRoute, /UPDATE battlepass_discount_certificates[\s\S]*?LOWER\(wallet_address\) = LOWER\(\?\) AND redeemed_at IS NULL/);
