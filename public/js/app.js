@@ -3024,16 +3024,25 @@ let connectedWallet = null;
                 const battlePassXp = Number(row.battlepass_xp || 0);
                 const battlePassLevel = Math.min(12, Math.floor(battlePassXp / 10000));
                 const battlePassRank = battlePassLevel ? `Level ${battlePassLevel}` : 'Unranked';
-                const compactXp = battlePassXp >= 1000 ? `${Math.floor(battlePassXp / 1000)}k` : String(battlePassXp);
                 const rankDisplay = `#${index + 1}`;
-                const badgeText = currentLeaderboardMode === 'PAYOUTS' ? 'PAID' : 'PnL';
+                const metricLabel = currentLeaderboardMode === 'PAYOUTS'
+                    ? 'LIFETIME PAYOUTS'
+                    : `${currentLeaderboardMode} PNL`;
+                const playerCardId = `leaderboard-battlepass-${index + 1}`;
 
                 container.insertAdjacentHTML('beforeend', `
                     <article class="battlepass-task leaderboard-card${isUser ? ' is-current-user' : ''}">
                         <div class="leaderboard-card-top">
                             <div class="leaderboard-trader">
                                 <span class="leaderboard-position${index < 3 ? ' is-top-three' : ''}">${rankDisplay}</span>
-                                <div class="battlepass-avatar-wrap leaderboard-avatar" aria-hidden="true"></div>
+                                <span class="leaderboard-avatar-wrap">
+                                    <button class="battlepass-avatar-wrap leaderboard-avatar" type="button" aria-label="View @${escapeHTML(row.username)} Battle Pass details" aria-describedby="${playerCardId}"></button>
+                                    <span class="leaderboard-player-card" id="${playerCardId}" role="tooltip">
+                                        <strong>BlastrrPass</strong>
+                                        <span>${battlePassRank} · ${battlePassXp.toLocaleString()} XP</span>
+                                        <span class="leaderboard-player-title">${escapeHTML(row.battlepass_title || 'No title claimed')}</span>
+                                    </span>
+                                </span>
                                 <div class="leaderboard-identity">
                                     <strong>@${escapeHTML(row.username)}</strong>
                                     ${isUser ? '<small class="leaderboard-you">Your profile</small>' : ''}
@@ -3042,13 +3051,7 @@ let connectedWallet = null;
                         </div>
                         <div class="leaderboard-metric">
                             <strong style="color: ${metricColor}">$${Number(row.metric_value).toFixed(2)} USDT</strong>
-                            <small>${badgeText}</small>
-                        </div>
-                        <div class="leaderboard-card-stats">
-                            <div><small>Promo code</small><code>${escapeHTML(row.discount_code)}</code></div>
-                            <div><small>Battle Pass rank</small><span class="battlepass-rank-badge">${battlePassRank}</span></div>
-                            <div><small>Battle Pass title</small><span class="battlepass-rank-badge">${escapeHTML(row.battlepass_title || 'No title claimed')}</span></div>
-                            <div><small>XP earned</small><strong>${compactXp}</strong></div>
+                            <small>${metricLabel}</small>
                         </div>
                         <div class="leaderboard-card-actions">
                             <button class="battlepass-task-action" type="button" data-leaderboard-promo="${escapeHTML(row.discount_code)}">Use code</button>

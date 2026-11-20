@@ -468,13 +468,13 @@ test('accounts, leaderboard, and profile use responsive Battle Pass-style cards'
   assert.match(appJs, /class="battlepass-task profile-commission-card"/);
   assert.match(appCss, /\.account-card\s*\{[^}]*border: 1px solid rgba\(203, 213, 225, 0\.095\)[^}]*background: rgba\(4, 3, 7, 0\.82\)/);
   assert.match(appCss, /\.leaderboard-card-list\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
-  assert.match(appCss, /\.leaderboard-card \{ display: grid; grid-template-columns: minmax\(220px, 1\.05fr\) minmax\(190px, 0\.9fr\) minmax\(450px, 2fr\) auto/);
+  assert.match(appCss, /\.leaderboard-card \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto auto/);
   assert.match(appCss, /\.leaderboard-metric \{ display: flex; align-items: baseline;[^}]*white-space: nowrap/);
-  assert.match(appCss, /\.leaderboard-card-stats > div \{ display: flex; align-items: center; justify-content: space-between/);
+  assert.match(appCss, /\.leaderboard-player-card \{[^}]*width: min\(280px, calc\(100vw - 72px\)\)/);
+  assert.match(appCss, /\.leaderboard-avatar-wrap:hover \.leaderboard-player-card, \.leaderboard-avatar-wrap:focus-within \.leaderboard-player-card/);
   assert.match(appCss, /@media \(max-width: 700px\)[\s\S]*?\.leaderboard-card \{ grid-template-columns: minmax\(0, 1fr\) auto/);
   assert.match(appCss, /\.battlepass-task\s*\{[\s\S]*?border: 1px solid var\(--surface-border\)[\s\S]*?background: rgba\(5, 7, 11, 0\.38\)/);
-  assert.match(appCss, /@media \(max-width: 700px\)[\s\S]*?\.leaderboard-card-stats \{ gap: 5px/);
-  assert.match(appJs, /<div class="leaderboard-metric">[\s\S]*?<small>\$\{badgeText\}<\/small>[\s\S]*?<\/div>\s*<div class="leaderboard-card-stats">/);
+  assert.match(appJs, /<div class="leaderboard-metric">[\s\S]*?<small>\$\{metricLabel\}<\/small>/);
   const leaderboardStart = appHtml.indexOf('<section id="leaderboardView"');
   const leaderboardEnd = appHtml.indexOf('</section>', leaderboardStart);
   const leaderboardHtml = appHtml.slice(leaderboardStart, leaderboardEnd);

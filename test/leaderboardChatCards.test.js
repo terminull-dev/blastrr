@@ -39,3 +39,14 @@ test('both public chat cards show BlastrrPass rank and title, XP, points, payout
   assert.match(appCss, /\.market-chat-player-card \{ width: 290px; \}/);
   assert.match(chatCss, /\.chat-player-card \{[^}]*width: min\(300px, calc\(100vw - 32px\)\)/);
 });
+
+test('leaderboard cards prioritize the selected category and reveal Battle Pass details from the avatar', () => {
+  const renderer = appJs.slice(appJs.indexOf('function renderLeaderboardTable'), appJs.indexOf('function shareRankOnX'));
+  assert.match(renderer, /currentLeaderboardMode === 'PAYOUTS'[\s\S]*?'LIFETIME PAYOUTS'[\s\S]*?`\$\{currentLeaderboardMode\} PNL`/);
+  assert.match(renderer, /aria-label="View @\$\{escapeHTML\(row\.username\)\} Battle Pass details" aria-describedby="\$\{playerCardId\}"/);
+  assert.match(renderer, /class="leaderboard-player-card" id="\$\{playerCardId\}" role="tooltip"/);
+  assert.match(renderer, /\$\{battlePassRank\} · \$\{battlePassXp\.toLocaleString\(\)\} XP/);
+  assert.match(renderer, /leaderboard-player-title/);
+  assert.doesNotMatch(renderer, /leaderboard-card-stats|Promo code<\/small>|XP earned<\/small>/);
+  assert.match(appCss, /\.leaderboard-avatar-wrap:hover \.leaderboard-player-card, \.leaderboard-avatar-wrap:focus-within \.leaderboard-player-card/);
+});
