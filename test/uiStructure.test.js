@@ -274,7 +274,10 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
     assert.equal(image.readUInt32BE(20), expectedHeight);
     assert.match(artworkSource, new RegExp(`${name.toLowerCase()}: \\{ src: '/images/battlepass/packs/${fileName}' \\}`));
   }
-  assert.match(appCss, /\.battlepass-pack-art \{[^}]*aspect-ratio: 3 \/ 2;[^}]*object-fit: contain;/);
+  assert.match(appCss, /\.battlepass-pack-graphic \{[^}]*background: #000;/);
+  assert.match(appCss, /\.battlepass-pack-card \{[^}]*grid-template-columns: minmax\(0, 1fr\); justify-items: center;/);
+  assert.match(appCss, /\.battlepass-pack-art \{[^}]*position: absolute; inset: 0;[^}]*width: 100%; height: 100%; object-fit: contain; object-position: center center;/);
+  assert.match(appCss, /\.battlepass-promotional-pack-card \{ display: grid; grid-template-columns: minmax\(0, 1fr\); justify-items: center;/);
   assert.doesNotMatch(appJs, /blastrr_reward_pack_sprite\.svg/);
 
   const shop = { innerHTML: '', onclick: null };
