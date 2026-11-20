@@ -193,6 +193,14 @@ test('pack opening reports non-JSON responses and keeps the API response contrac
   assert.ok(serverJs.indexOf("app.post('/api/battlepass/packs/open'") < serverJs.indexOf("app.use('/api'"));
 });
 
+test('pack-open route closes its transaction and route callbacks before the next handler', () => {
+  const openRoute = serverJs.slice(
+    serverJs.indexOf("app.post('/api/battlepass/packs/open'"),
+    serverJs.indexOf("app.get('/api/battlepass/profile'")
+  );
+  assert.match(openRoute, /\n\s+\}\);\n\}\);\n\}\);\s*$/);
+});
+
 test('reward shop seeds the nine tiers with account rewards from the active plan catalog', () => {
   for (const tier of ['Paper', 'Wood', 'Copper', 'Bronze', 'Iron', 'Steel', 'Titanium', 'Silver', 'Gold']) {
     assert.ok(serverJs.includes(`name: '${tier}'`), `missing ${tier} pack seed`);

@@ -2928,6 +2928,7 @@ app.post('/api/battlepass/packs/open', sensitiveLimiter, requireWalletSession, r
       );
   });
 });
+});
 
 app.get('/api/battlepass/profile', (req, res) => {
   const username = typeof req.query.username === 'string' ? req.query.username.trim() : '';
