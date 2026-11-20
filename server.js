@@ -33,7 +33,7 @@ const { calculateTradePerformance } = require('./performanceRules');
 const { MarketDataService } = require('./marketDataService');
 const { createMarketDataProviders } = require('./marketDataProviders');
 const { selectWeightedReward, validatePackRewardPool } = require('./battlePassRewards');
-const { createBattlePassDiscountCertificates } = require('./battlePassCertificates');
+const { completeBattlePassPackOpening } = require('./battlePassPackCompletion');
 const {
   SESSION_LIMIT_PER_IP,
   SESSION_IDLE_TIMEOUT_MS,
@@ -2885,16 +2885,6 @@ app.post('/api/battlepass/packs/open', sensitiveLimiter, requireWalletSession, r
                               ? Number(selectedReward.xp_amount) * quantity : 0;
                             const pointsAwarded = selectedReward.reward_type === 'POINTS'
                               ? Number(selectedReward.points_amount) * quantity : 0;
-                            const addBalance = callback => {
-                              if (!xpAwarded && !pointsAwarded) return callback(null);
-                              db.run(
-                                `UPDATE battlepass_users
-                                 SET xp = xp + ?, points = points + ?, updated_at = CURRENT_TIMESTAMP
-                                 WHERE LOWER(wallet_address) = LOWER(?)`,
-                                [xpAwarded, pointsAwarded, req.walletAddress],
-                                balanceUpdateErr => callback(balanceUpdateErr)
-                              );
-                            };
                             db.run(
                               `INSERT INTO battlepass_pack_openings
                                (id, request_key, wallet_address, pack_id, reward_id, points_spent, reward_type,
@@ -2908,75 +2898,20 @@ app.post('/api/battlepass/packs/open', sensitiveLimiter, requireWalletSession, r
                               ],
                               insertOpeningErr => {
                                 if (insertOpeningErr) return rollback(500, 'Unable to save the pack reward to your vault.');
-                                const insertRewardEvent = callback => {
-                                  if (!xpAwarded && !pointsAwarded) return callback(null);
-                                  db.run(
-                                    `INSERT INTO battlepass_events
-                                     (id, wallet_address, event_type, reference_id, xp, points)
-                                     VALUES (?, ?, 'PACK_REWARD', ?, ?, ?)`,
-                                    [`bpe_${crypto.randomBytes(10).toString('hex')}`, req.walletAddress, openingId, xpAwarded, pointsAwarded],
-                                    callback
-                                  );
-                                };
-                                const finishOpening = certificates => addBalance(balanceUpdateErr => {
-                                  if (balanceUpdateErr) return rollback(500, 'Unable to apply your XP or points reward.');
-                                  insertRewardEvent(eventErr => {
-                                    if (eventErr) return rollback(500, 'Unable to record your reward history.');
-                                      const capReached = Number(selectedReward.max_drops) > 0 &&
-                                        Number(selectedReward.drops) + 1 >= Number(selectedReward.max_drops);
-                                      const notifyCap = next => {
-                                        if (!capReached) return next(null);
-                                        db.run(
-                                          'UPDATE battlepass_packs SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                                          [packId],
-                                          updateErr => updateErr
-                                            ? next(updateErr)
-                                            : insertBattlePassPackCapNotification(pack, selectedReward, next)
-                                        );
-                                      };
-                                      notifyCap(capErr => {
-                                        if (capErr) return rollback(500, 'Unable to record the reward cap notification.');
-                                        db.get(
-                                          'SELECT points FROM battlepass_users WHERE LOWER(wallet_address) = LOWER(?)',
-                                          [req.walletAddress],
-                                          (finalBalanceErr, finalBalance) => {
-                                            if (finalBalanceErr) return rollback(500, 'Unable to load your updated points balance.');
-                                            db.run('COMMIT', commitErr => {
-                                              if (commitErr) return res.status(500).json({ error: 'Unable to complete your pack opening.' });
-                                              res.json({
-                                                success: true,
-                                                opening: {
-                                                  id: openingId,
-                                                  pack_id: packId,
-                                                  reward_name: selectedReward.name,
-                                                  reward_description: selectedReward.description,
-                                                  reward_type: selectedReward.reward_type,
-                                                  quantity,
-                                                  xp_awarded: xpAwarded,
-                                                  points_awarded: pointsAwarded,
-                                                  account_ids: accountIds,
-                                                  points_spent: Number(pack.points_cost)
-                                                },
-                                                certificates,
-                                                points: Number(finalBalance?.points || 0),
-                                                pack_out_of_stock: capReached
-                                              });
-                                            });
-                                          }
-                                        );
-                                      });
-                                    });
-                                  });
-                                });
-                                createBattlePassDiscountCertificates({
+                                completeBattlePassPackOpening({
                                   db,
                                   openingId,
                                   walletAddress: req.walletAddress,
                                   reward: selectedReward,
-                                  quantity
-                                }, (certificateErr, certificates) => {
-                                  if (certificateErr) return rollback(500, 'Unable to create your discount certificate.');
-                                  finishOpening(certificates);
+                                  quantity,
+                                  xpAwarded,
+                                  pointsAwarded,
+                                  pack,
+                                  packId,
+                                  accountIds,
+                                  rollback,
+                                  response: res,
+                                  notifyPackCap: insertBattlePassPackCapNotification
                                 });
                               }
                             );
