@@ -229,7 +229,7 @@ test('admin promotional packs grant once to eligible unique users and open from 
   assert.match(promoOpenRoute, /completeBattlePassPackOpening/);
   assert.match(appHtml, /id="battlepass-vault-promotional-packs"/);
   assert.match(appHtml, /id="admin-battlepass-promotion-issue"/);
-  assert.match(appJs, /getBattlePassPackArtwork\(pack\.pack_name\)/);
+  assert.match(appJs, /renderBattlePassPackArt\(\{ name: pack\.pack_name \}\)/);
   assert.match(appJs, /data-open-promotional-pack/);
   assert.match(appJs, /\/api\/battlepass\/promotional-packs\/open/);
   assert.match(appJs, /\/api\/admin\/battlepass\/promotions\/issue/);

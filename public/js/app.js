@@ -2503,21 +2503,29 @@ let connectedWallet = null;
             selectBattlePassTab(battlePassActiveTab);
         }
 
+        const BATTLE_PASS_PACK_SPRITE = '/images/battlepass/packs/reward-pack-sprite.svg';
         const BATTLE_PASS_PACK_ARTWORK = Object.freeze({
-            paper: { src: '/images/battlepass/packs/paper.png' },
-            wood: { src: '/images/battlepass/packs/wood.png' },
-            copper: { src: '/images/battlepass/packs/copper.png' },
-            bronze: { src: '/images/battlepass/packs/bronze.png' },
-            iron: { src: '/images/battlepass/packs/iron.png' },
-            steel: { src: '/images/battlepass/packs/steel.png' },
-            titanium: { src: '/images/battlepass/packs/titanium.png' },
-            silver: { src: '/images/battlepass/packs/silver.png' },
-            gold: { src: '/images/battlepass/packs/gold.png' }
+            paper: { symbol: 'paper-pack', viewBox: '100 70 320 460', accent: '#cbd5e1' },
+            wood: { symbol: 'wood-pack', viewBox: '590 70 320 460', accent: '#d7aa7d' },
+            copper: { symbol: 'copper-pack', viewBox: '1080 70 320 460', accent: '#f0a36c' },
+            bronze: { symbol: 'bronze-pack', viewBox: '100 670 320 460', accent: '#e4a17b' },
+            iron: { symbol: 'iron-pack', viewBox: '590 670 320 460', accent: '#aeb8c6' },
+            steel: { symbol: 'steel-pack', viewBox: '1080 670 320 460', accent: '#d5e0ed' },
+            titanium: { symbol: 'titanium-pack', viewBox: '100 1270 320 460', accent: '#a9d8e8' },
+            silver: { symbol: 'silver-pack', viewBox: '590 1270 320 460', accent: '#e3e7ed' },
+            gold: { symbol: 'gold-pack', viewBox: '1080 1270 320 460', accent: '#ffe7a0' }
         });
 
         function getBattlePassPackArtwork(packName) {
             const tierName = String(packName || '').trim().replace(/\s+pack$/i, '').toLowerCase();
             return BATTLE_PASS_PACK_ARTWORK[tierName] || null;
+        }
+
+        function renderBattlePassPackArt(pack) {
+            const artwork = getBattlePassPackArtwork(pack.name);
+            return artwork
+                ? `<svg class="battlepass-pack-art" viewBox="${artwork.viewBox}" aria-hidden="true" focusable="false"><use href="${BATTLE_PASS_PACK_SPRITE}#${artwork.symbol}"></use></svg>`
+                : `<span class="battlepass-pack-fallback-mark" aria-hidden="true">✦</span><strong>${escapeHTML(pack.name)}</strong>`;
         }
 
         function renderBattlePassShop() {
@@ -2535,55 +2543,63 @@ let connectedWallet = null;
                 battlePassSelectedPackId = Number(battlePassPacks[0].id);
             }
             const selectedPack = battlePassPacks.find(pack => Number(pack.id) === Number(battlePassSelectedPackId)) || battlePassPacks[0];
-            const getGraphic = pack => {
-                const artwork = getBattlePassPackArtwork(pack.name);
-                return artwork
-                    ? `<img class="battlepass-pack-art" src="${artwork.src}" alt="" loading="lazy" decoding="async">`
-                    : `<span>✦</span><strong>${escapeHTML(pack.name)}</strong>`;
-            };
+            const selectedArtwork = getBattlePassPackArtwork(selectedPack.name);
+            const pointBalance = Number(battlePassProfile?.points || 0);
             const selector = battlePassPacks.map(pack => {
                 const selected = Number(pack.id) === Number(selectedPack.id);
                 const outOfStock = Boolean(pack.out_of_stock);
+                const artwork = getBattlePassPackArtwork(pack.name);
                 return `<button class="battlepass-pack-selector-item${selected ? ' is-selected' : ''}${outOfStock ? ' is-out-of-stock' : ''}"
-                    type="button" role="option" aria-selected="${selected}" data-select-pack="${Number(pack.id)}" data-pack-card="${Number(pack.id)}">
-                    <span class="battlepass-pack-graphic" aria-hidden="true">${getGraphic(pack)}</span>
+                    type="button" aria-pressed="${selected}" data-select-pack="${Number(pack.id)}" style="--pack-accent: ${artwork?.accent || '#a78bfa'}">
+                    <span class="battlepass-pack-selector-art" aria-hidden="true">${renderBattlePassPackArt(pack)}</span>
                     <strong>${escapeHTML(pack.name)}</strong>
-                    <small>${Number(pack.points_cost).toLocaleString()} points</small>
+                    <small>${Number(pack.points_cost).toLocaleString()} points${outOfStock ? ' · sold out' : ''}</small>
                 </button>`;
             }).join('');
             const selectedOutOfStock = Boolean(selectedPack.out_of_stock);
             const rewards = (selectedPack.rewards || []).map(reward => `
-                <li><span>${escapeHTML(reward.name)}</span><strong>${Number(reward.odds).toLocaleString()}%</strong></li>
+                <li><span class="battlepass-pack-reward-name">${escapeHTML(reward.name)}</span><strong>${Number(reward.odds).toLocaleString()}%</strong></li>
             `).join('');
             const detail = `
-                <article class="battlepass-pack-detail${selectedOutOfStock ? ' is-out-of-stock' : ''}" data-pack-card="${Number(selectedPack.id)}">
-                    <div class="battlepass-pack-detail-art battlepass-pack-graphic" aria-hidden="true">${getGraphic(selectedPack)}</div>
+                <article class="battlepass-pack-detail${selectedOutOfStock ? ' is-out-of-stock' : ''}" data-pack-card="${Number(selectedPack.id)}" style="--pack-accent: ${selectedArtwork?.accent || '#a78bfa'}">
+                    <div class="battlepass-pack-detail-art battlepass-pack-graphic" aria-hidden="true">${renderBattlePassPackArt(selectedPack)}</div>
                     <div class="battlepass-pack-copy">
                         <div class="battlepass-pack-heading">
-                            <span class="battlepass-pack-eyebrow">Selected pack</span>
+                            <span class="battlepass-pack-eyebrow">Blastrr reward series · selected tier</span>
                             <h3>${escapeHTML(selectedPack.name)} Pack</h3>
-                            <strong>${Number(selectedPack.points_cost).toLocaleString()} points</strong>
                         </div>
-                        <p>Open once to reveal a reward. Items are delivered instantly; discount certificates go to your vault.</p>
-                        <div class="battlepass-pack-odds">
-                            <strong>Possible pulls · ${Number(selectedPack.odds_total || 0).toLocaleString()}% total</strong>
-                            <ul>${rewards || '<li><span>Reward pool unavailable</span><strong>—</strong></li>'}</ul>
-                        </div>
+                        <p class="battlepass-pack-description">A sealed reward, opened instantly. One item is drawn from this pack’s reward pool.</p>
+                        <section class="battlepass-pack-odds" aria-label="Potential pulls">
+                            <div class="battlepass-pack-odds-heading">
+                                <div><h4>Potential pulls</h4><p>Rewards are awarded automatically</p></div>
+                                <span>${Number(selectedPack.odds_total || 0).toLocaleString()}% total odds</span>
+                            </div>
+                            <ul>${rewards || '<li><span class="battlepass-pack-reward-name">Reward pool unavailable</span><strong>—</strong></li>'}</ul>
+                        </section>
+                        <div class="battlepass-pack-purchase">
+                            <div class="battlepass-pack-price">
+                                <span>Pack price</span>
+                                <strong>${Number(selectedPack.points_cost).toLocaleString()} <small>points</small></strong>
+                                <small>Balance: ${pointBalance.toLocaleString()} points</small>
+                            </div>
                         ${selectedOutOfStock
                             ? `<span class="battlepass-out-of-stock" role="status">Out of stock</span>`
-                            : `<button class="battlepass-pack-open" type="button" data-open-pack="${Number(selectedPack.id)}" ${Number(battlePassProfile?.points || 0) < Number(selectedPack.points_cost) ? 'disabled' : ''}>${Number(battlePassProfile?.points || 0) < Number(selectedPack.points_cost) ? 'Not enough points' : 'Buy and open pack'}</button>`}
+                            : `<button class="battlepass-pack-open" type="button" data-open-pack="${Number(selectedPack.id)}" ${pointBalance < Number(selectedPack.points_cost) ? 'disabled' : ''}>${pointBalance < Number(selectedPack.points_cost) ? 'Not enough points' : 'Buy & open pack'}</button>`}
+                        </div>
                     </div>
                 </article>`;
             container.innerHTML = `
                 <div class="battlepass-pack-layout">
-                    <div class="battlepass-pack-selector" role="listbox" aria-label="Reward packs">${selector}</div>
+                    <div class="battlepass-pack-selector" role="group" aria-label="Choose a reward pack">${selector}</div>
                     ${detail}
                 </div>`;
             container.onclick = event => {
                 const selectorItem = event.target.closest('[data-select-pack]');
                 if (selectorItem) {
-                    battlePassSelectedPackId = Number(selectorItem.dataset.selectPack);
+                    const selectedPackId = Number(selectorItem.dataset.selectPack);
+                    battlePassSelectedPackId = selectedPackId;
                     renderBattlePassShop();
+                    container.querySelector(`[data-select-pack="${selectedPackId}"]`)?.focus({ preventScroll: true });
                     return;
                 }
                 const button = event.target.closest('[data-open-pack]');
@@ -2622,12 +2638,8 @@ let connectedWallet = null;
             if (promotionalPacks) {
                 promotionalPacks.innerHTML = battlePassVault.promotional_packs.length
                     ? battlePassVault.promotional_packs.map(pack => {
-                        const artwork = getBattlePassPackArtwork(pack.pack_name);
-                        const graphic = artwork
-                            ? `<img class="battlepass-pack-art" src="${artwork.src}" alt="" loading="lazy" decoding="async">`
-                            : `<span>✦</span><strong>${escapeHTML(pack.pack_name)}</strong>`;
                         return `<article class="battlepass-vault-card battlepass-promotional-pack-card" data-promotional-pack-card="${escapeHTML(pack.id)}">
-                            <div class="battlepass-pack-graphic" aria-hidden="true">${graphic}</div>
+                            <div class="battlepass-pack-graphic" aria-hidden="true">${renderBattlePassPackArt({ name: pack.pack_name })}</div>
                             <div><strong>${escapeHTML(pack.pack_name)} Pack</strong><small>Promotional pack · received ${new Date(pack.created_at).toLocaleString()}</small></div>
                             <button class="battlepass-pack-open" type="button" data-open-promotional-pack="${escapeHTML(pack.id)}">Rip pack</button>
                         </article>`;

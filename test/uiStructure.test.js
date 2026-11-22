@@ -7,6 +7,7 @@ const appHtml = fs.readFileSync('public/app.html', 'utf8');
 const appJs = fs.readFileSync('public/js/app.js', 'utf8');
 const appCss = fs.readFileSync('public/css/app.css', 'utf8');
 const packArtworkDirectory = 'public/images/battlepass/packs';
+const packArtworkSpritePath = `${packArtworkDirectory}/reward-pack-sprite.svg`;
 const landingHtml = fs.readFileSync('public/index.html', 'utf8');
 const databaseJs = fs.readFileSync('database.js', 'utf8');
 const serverJs = fs.readFileSync('server.js', 'utf8');
@@ -255,34 +256,31 @@ test('all section tablists share accessible purple active and focus styling', ()
   assert.match(appCss, /button:not\(\.nav-tab\):not\(\.admin-section-tab\):not\(\.account-main-tab\):focus-visible/);
 });
 
-test('Battle Pass pack cards render nine mapped PNG images and preserve the unknown-pack fallback', () => {
-  const artworkStart = appJs.indexOf('const BATTLE_PASS_PACK_ARTWORK = Object.freeze({');
+test('Battle Pass pack cards render the SVG sprite and preserve shop and vault interactions', () => {
+  const artworkStart = appJs.indexOf("const BATTLE_PASS_PACK_SPRITE = '/images/battlepass/packs/reward-pack-sprite.svg';");
   const rendererStart = appJs.indexOf('function renderBattlePassShop()', artworkStart);
   const rendererEnd = appJs.indexOf('function renderBattlePassVault()', rendererStart);
   assert.ok(artworkStart >= 0 && rendererStart > artworkStart && rendererEnd > rendererStart);
   const artworkSource = appJs.slice(artworkStart, rendererStart);
   const rendererSource = appJs.slice(rendererStart, rendererEnd);
+  const spriteSource = fs.readFileSync(packArtworkSpritePath, 'utf8');
+  assert.deepEqual(fs.readdirSync(packArtworkDirectory).filter(file => file.endsWith('.png')), []);
   const tierNames = ['Paper', 'Wood', 'Copper', 'Bronze', 'Iron', 'Steel', 'Titanium', 'Silver', 'Gold'];
+  const spritePositions = ['100 70', '590 70', '1080 70', '100 670', '590 670', '1080 670', '100 1270', '590 1270', '1080 1270'];
   for (const [index, name] of tierNames.entries()) {
-    const fileName = `${name.toLowerCase()}.png`;
-    const imagePath = `${packArtworkDirectory}/${fileName}`;
-    const image = fs.readFileSync(imagePath);
-    const row = Math.floor(index / 3);
-    const expectedHeight = row === 1 ? 342 : 341;
-    assert.equal(image.toString('ascii', 1, 4), 'PNG');
-    assert.equal(image.readUInt32BE(16), 512);
-    assert.equal(image.readUInt32BE(20), expectedHeight);
-    assert.match(artworkSource, new RegExp(`${name.toLowerCase()}: \\{ src: '/images/battlepass/packs/${fileName}' \\}`));
+    const tier = name.toLowerCase();
+    assert.match(spriteSource, new RegExp(`<g id="${tier}-pack" transform="translate\\(${spritePositions[index]}\\)">`));
+    assert.match(artworkSource, new RegExp(`${tier}: \\{ symbol: '${tier}-pack', viewBox: '${spritePositions[index]} 320 460'`));
   }
-  assert.match(appCss, /\.battlepass-pack-graphic \{[^}]*background: #000;/);
-  assert.match(appCss, /\.battlepass-pack-layout \{[^}]*grid-template-columns:/);
+  assert.match(appJs, /BATTLE_PASS_PACK_SPRITE = '\/images\/battlepass\/packs\/reward-pack-sprite\.svg'/);
+  assert.match(appCss, /\.battlepass-pack-layout \{ display: grid; gap:/);
   assert.match(appCss, /\.battlepass-pack-selector \{[^}]*display: flex;[^}]*overflow-x: auto;/);
-  assert.match(appCss, /\.battlepass-pack-detail-art \{[^}]*background: #000;/);
-  assert.match(appCss, /\.battlepass-pack-art \{[^}]*position: absolute; inset: 0;[^}]*width: 100%; height: 100%; object-fit: contain; object-position: center center;/);
+  assert.match(appCss, /\.battlepass-pack-detail \{[^}]*grid-template-columns: minmax\(250px, 0\.8fr\) minmax\(0, 1\.2fr\);/);
+  assert.match(appCss, /\.battlepass-pack-art \{ display: block; width: 100%; height: 100%;/);
+  assert.match(appCss, /\.battlepass-pack-odds ul \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
   assert.match(appCss, /\.battlepass-promotional-pack-card \{ display: grid; grid-template-columns: minmax\(0, 1fr\); justify-items: center;/);
-  assert.doesNotMatch(appJs, /blastrr_reward_pack_sprite\.svg/);
 
-  const shop = { innerHTML: '', onclick: null };
+  const shop = { innerHTML: '', onclick: null, querySelector: () => ({ focus() {} }) };
   const points = { textContent: '' };
   const reveal = { replaceChildren() {} };
   const elements = {
@@ -294,11 +292,12 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
   const packs = tierNames.map((name, index) => ({
     id: index + 1,
     name,
-    points_cost: 100,
-    out_of_stock: false,
-    rewards: []
+    points_cost: name === 'Gold' ? 2000 : 100,
+    out_of_stock: name === 'Wood',
+    rewards: name === 'Paper' ? [{ name: 'Trading account', odds: 10 }] : [],
+    odds_total: name === 'Paper' ? 100 : 0
   }));
-  packs.push({ id: 10, name: 'Unknown Tier', points_cost: 100, out_of_stock: false, rewards: [] });
+  packs.push({ id: 10, name: 'Unknown Tier', points_cost: 2000, out_of_stock: false, rewards: [], odds_total: 0 });
   const sandbox = {
     battlePassPacks: packs,
     battlePassProfile: { points: 1000 },
@@ -311,13 +310,26 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
   vm.runInNewContext(`${artworkSource}\n${rendererSource}\nrenderBattlePassShop();`, sandbox);
 
   for (const name of tierNames) {
-    const fileName = `${name.toLowerCase()}.png`;
-    assert.ok(shop.innerHTML.includes(`<img class="battlepass-pack-art" src="/images/battlepass/packs/${fileName}"`), `${name} should render`);
+    assert.ok(shop.innerHTML.includes(`<use href="/images/battlepass/packs/reward-pack-sprite.svg#${name.toLowerCase()}-pack"></use>`), `${name} should render from the sprite`);
   }
-  assert.ok(shop.innerHTML.includes('<span>✦</span><strong>Unknown Tier</strong>'));
+  assert.ok(shop.innerHTML.includes('<span class="battlepass-pack-fallback-mark" aria-hidden="true">✦</span><strong>Unknown Tier</strong>'));
+  assert.ok(shop.innerHTML.includes('Trading account'));
+  assert.ok(shop.innerHTML.includes('10%'));
+  assert.ok(shop.innerHTML.includes('Balance: 1,000 points'));
+  assert.ok(shop.innerHTML.includes('data-open-pack="1"'));
+  assert.ok(shop.innerHTML.includes('aria-pressed="true" data-select-pack="1"'));
   const clickedButton = { disabled: false };
   shop.onclick({ target: { closest: selector => selector === '[data-open-pack]' ? clickedButton : null } });
   assert.equal(openedButton, clickedButton);
+  const selectedPackButton = { dataset: { selectPack: '2' } };
+  shop.onclick({ target: { closest: selector => selector === '[data-select-pack]' ? selectedPackButton : null } });
+  assert.equal(sandbox.battlePassSelectedPackId, 2);
+  assert.ok(shop.innerHTML.includes('<h3>Wood Pack</h3>'));
+  assert.ok(shop.innerHTML.includes('Out of stock'));
+  const unaffordablePackButton = { dataset: { selectPack: '9' } };
+  shop.onclick({ target: { closest: selector => selector === '[data-select-pack]' ? unaffordablePackButton : null } });
+  assert.equal(sandbox.battlePassSelectedPackId, 9);
+  assert.ok(shop.innerHTML.includes('disabled>Not enough points</button>'));
   const openHandlerStart = appJs.indexOf('async function openBattlePassPack(button)');
   const openHandlerEnd = appJs.indexOf('async function useBattlePassCertificate(', openHandlerStart);
   assert.match(appJs.slice(openHandlerStart, openHandlerEnd), /walletFetch\('\/api\/battlepass\/packs\/open'/);
@@ -332,6 +344,7 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
     'battlepass-vault-certificates': certificates,
     'battlepass-vault-rewards': rewards
   };
+  let openedPromotionalPack = null;
   const vaultSandbox = {
     battlePassVault: {
       promotional_packs: [{ id: 'bpg_123', pack_name: 'Gold', created_at: '2026-01-01T00:00:00Z' }],
@@ -340,11 +353,14 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
     },
     document: { getElementById: id => vaultElements[id] || null },
     escapeHTML: value => String(value),
-    openBattlePassPromotionalPack() {}
+    openBattlePassPromotionalPack: button => { openedPromotionalPack = button; }
   };
   vm.runInNewContext(`${artworkSource}\n${appJs.slice(vaultRendererStart, vaultRendererEnd)}\nrenderBattlePassVault();`, vaultSandbox);
-  assert.ok(vault.innerHTML.includes('<img class="battlepass-pack-art" src="/images/battlepass/packs/gold.png"'));
+  assert.ok(vault.innerHTML.includes('<use href="/images/battlepass/packs/reward-pack-sprite.svg#gold-pack"></use>'));
   assert.ok(vault.innerHTML.includes('data-open-promotional-pack="bpg_123"'));
+  const promotionalButton = { disabled: false };
+  vault.onclick({ target: { closest: selector => selector === '[data-open-promotional-pack]' ? promotionalButton : null } });
+  assert.equal(openedPromotionalPack, promotionalButton);
 });
 
 test('workspace uses grouped navigation and shared homepage-inspired view and tile styling', () => {
