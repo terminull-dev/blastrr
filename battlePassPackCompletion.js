@@ -60,7 +60,7 @@ function completeBattlePassPackOpening({
           [walletAddress],
           (finalBalanceErr, finalBalance) => {
             if (finalBalanceErr) return rollback(500, 'Unable to load your updated points balance.');
-            db.run('COMMIT', commitErr => {
+            db.run('COMMIT', [], commitErr => {
               if (commitErr) return response.status(500).json({ error: 'Unable to complete your pack opening.' });
               response.json({
                 success: true,

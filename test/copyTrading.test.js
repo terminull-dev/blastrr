@@ -78,6 +78,9 @@ test('copy-trading page includes the group wizard and can be put under maintenan
 
 test('account and copy-trading views show API-backed goal and risk progress', () => {
   assert.match(serverJs, /const totalProfit = account\.current_equity - account\.initial_balance;/);
+  assert.match(serverJs, /const profitTargetPercent = initialBalance > 0 && profitTarget > 0/);
+  assert.match(serverJs, /profitTargetPercent: profitTargetPercent\.toFixed\(1\)/);
+  assert.match(appJs, /percentage: metrics\.profitTargetPercent/);
   assert.match(serverJs, /profitProgress: profitProgress\.toFixed\(1\)[\s\S]*?currentProfit: totalProfit[\s\S]*?ddProgress: ddProgress\.toFixed\(1\)[\s\S]*?maxAllowedDD,[\s\S]*?currentDD,[\s\S]*?dllProgress: dllProgress\.toFixed\(1\)[\s\S]*?maxAllowedDLL,[\s\S]*?currentDLL/);
   assert.match(appJs, /function renderAccountProgressStats\(metrics, \{ compact = false \} = \{\}\)/);
   assert.match(appJs, /!Number\.isFinite\(percentage\)[\s\S]*?target <= 0/);

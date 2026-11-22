@@ -5840,7 +5840,14 @@ app.get('/api/accounts/details', requireWalletSession, (req, res) => {
         db.all(`SELECT * FROM trades WHERE account_id = ? ORDER BY created_at DESC`, [accountId], (err2, trades) => {
         if (err2) return res.status(500).json({ error: 'Unable to load account trades.' });
         const totalProfit = account.current_equity - account.initial_balance;
-        const profitProgress = Math.min(100, Math.max(0, (totalProfit / account.profit_target) * 100));
+        const profitTarget = Number(account.profit_target) || 0;
+        const initialBalance = Number(account.initial_balance) || 0;
+        const profitProgress = profitTarget > 0
+          ? Math.min(100, Math.max(0, (totalProfit / profitTarget) * 100))
+          : 0;
+        const profitTargetPercent = initialBalance > 0 && profitTarget > 0
+          ? (profitTarget / initialBalance) * 100
+          : 0;
         
         const maxAllowedDD = account.initial_balance * (account.max_drawdown_pct / 100);
         const mllFloor = getMllFloor(account, account);
@@ -5887,6 +5894,7 @@ app.get('/api/accounts/details', requireWalletSession, (req, res) => {
                   lock: activeLock,
                   metrics: {
                     profitProgress: profitProgress.toFixed(1),
+                    profitTargetPercent: profitTargetPercent.toFixed(1),
                     profitTarget: account.profit_target,
                     currentProfit: totalProfit,
                     ddProgress: ddProgress.toFixed(1),
@@ -8147,8 +8155,14 @@ app.get('/api/trades/active', requireWalletSession, (req, res) => {
       if (baselineErr) return res.status(503).json({ error: 'Unable to calculate live account risk.' });
       refreshAccountLock(liveAccount, (lockErr, lock) => {
         if (lockErr) return res.status(500).json({ error: 'Unable to apply account risk lock.' });
+        const failedAccount = liveAccount.status === 'PERMANENTLY_LOCKED' ||
+          liveAccount.status === 'FAILED' ||
+          liveAccount.status === 'MLL_FAILED' ||
+          liveAccount.status === 'CLOSED' ||
+          liveAccount.lock_reason === 'MLL' ||
+          Number(liveAccount.permanent_lock) === 1;
         res.json({
-          trades: liveAccount.open_trades || [],
+          trades: failedAccount ? [] : (liveAccount.open_trades || []),
           risk_balance: getRiskBalance(liveAccount),
           lock: lock || getActiveLock(liveAccount),
           account_status: liveAccount.status,

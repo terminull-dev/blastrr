@@ -136,6 +136,7 @@ let connectedWallet = null;
         let battlePassPacks = [];
         let battlePassVault = { rewards: [], certificates: [], promotional_packs: [] };
         let lastPackReveal = null;
+        let battlePassSelectedPackId = null;
         let adminBattlePassPacks = [];
         let adminBattlePassRewards = [];
         let adminBattlePassPlans = [];
@@ -1508,6 +1509,10 @@ let connectedWallet = null;
             liveMarketTradeLines.forEach(line => liveMarketCandleSeries.removePriceLine(line));
             liveMarketTradeLines = [];
             liveMarketTradeMarkers = [];
+            if (activeAccount && isPermanentlyLockedCopyAccount(activeAccount)) {
+                liveMarketCandleSeries.setMarkers([]);
+                return;
+            }
             const selectedSymbol = document.getElementById('order-symbol')?.value;
             const isLimitMode = document.getElementById('order-type')?.value === 'LIMIT';
             const validTrades = (trades || []).filter(trade =>
@@ -2521,28 +2526,66 @@ let connectedWallet = null;
             const result = document.getElementById('battlepass-pack-reveal');
             if (!container) return;
             if (points) points.textContent = Number(battlePassProfile?.points || 0).toLocaleString();
-            container.innerHTML = battlePassPacks.length ? battlePassPacks.map(pack => {
-                const outOfStock = Boolean(pack.out_of_stock);
+            if (!battlePassPacks.length) {
+                container.innerHTML = '<p class="account-chart-empty">No reward packs are available yet.</p>';
+                battlePassSelectedPackId = null;
+                return;
+            }
+            if (!battlePassPacks.some(pack => Number(pack.id) === Number(battlePassSelectedPackId))) {
+                battlePassSelectedPackId = Number(battlePassPacks[0].id);
+            }
+            const selectedPack = battlePassPacks.find(pack => Number(pack.id) === Number(battlePassSelectedPackId)) || battlePassPacks[0];
+            const getGraphic = pack => {
                 const artwork = getBattlePassPackArtwork(pack.name);
-                const graphic = artwork
+                return artwork
                     ? `<img class="battlepass-pack-art" src="${artwork.src}" alt="" loading="lazy" decoding="async">`
                     : `<span>✦</span><strong>${escapeHTML(pack.name)}</strong>`;
-                const rewards = pack.rewards.map(reward => `
-                    <li><span>${escapeHTML(reward.name)}</span><strong>${Number(reward.odds).toLocaleString()}%</strong></li>
-                `).join('');
-                return `<article class="battlepass-pack-card${outOfStock ? ' is-out-of-stock' : ''}" data-pack-card="${Number(pack.id)}">
-                    <div class="battlepass-pack-graphic" aria-hidden="true">${graphic}</div>
+            };
+            const selector = battlePassPacks.map(pack => {
+                const selected = Number(pack.id) === Number(selectedPack.id);
+                const outOfStock = Boolean(pack.out_of_stock);
+                return `<button class="battlepass-pack-selector-item${selected ? ' is-selected' : ''}${outOfStock ? ' is-out-of-stock' : ''}"
+                    type="button" role="option" aria-selected="${selected}" data-select-pack="${Number(pack.id)}" data-pack-card="${Number(pack.id)}">
+                    <span class="battlepass-pack-graphic" aria-hidden="true">${getGraphic(pack)}</span>
+                    <strong>${escapeHTML(pack.name)}</strong>
+                    <small>${Number(pack.points_cost).toLocaleString()} points</small>
+                </button>`;
+            }).join('');
+            const selectedOutOfStock = Boolean(selectedPack.out_of_stock);
+            const rewards = (selectedPack.rewards || []).map(reward => `
+                <li><span>${escapeHTML(reward.name)}</span><strong>${Number(reward.odds).toLocaleString()}%</strong></li>
+            `).join('');
+            const detail = `
+                <article class="battlepass-pack-detail${selectedOutOfStock ? ' is-out-of-stock' : ''}" data-pack-card="${Number(selectedPack.id)}">
+                    <div class="battlepass-pack-detail-art battlepass-pack-graphic" aria-hidden="true">${getGraphic(selectedPack)}</div>
                     <div class="battlepass-pack-copy">
-                        <div class="battlepass-pack-heading"><h3>${escapeHTML(pack.name)} Pack</h3><span>${Number(pack.points_cost).toLocaleString()} points</span></div>
+                        <div class="battlepass-pack-heading">
+                            <span class="battlepass-pack-eyebrow">Selected pack</span>
+                            <h3>${escapeHTML(selectedPack.name)} Pack</h3>
+                            <strong>${Number(selectedPack.points_cost).toLocaleString()} points</strong>
+                        </div>
                         <p>Open once to reveal a reward. Items are delivered instantly; discount certificates go to your vault.</p>
-                        <details class="battlepass-pack-odds"><summary>Reward odds · ${Number(pack.odds_total || 0).toLocaleString()}% total</summary><ul>${rewards}</ul></details>
-                        ${outOfStock
+                        <div class="battlepass-pack-odds">
+                            <strong>Possible pulls · ${Number(selectedPack.odds_total || 0).toLocaleString()}% total</strong>
+                            <ul>${rewards || '<li><span>Reward pool unavailable</span><strong>—</strong></li>'}</ul>
+                        </div>
+                        ${selectedOutOfStock
                             ? `<span class="battlepass-out-of-stock" role="status">Out of stock</span>`
-                            : `<button class="battlepass-pack-open" type="button" data-open-pack="${Number(pack.id)}" ${Number(battlePassProfile?.points || 0) < Number(pack.points_cost) ? 'disabled' : ''}>${Number(battlePassProfile?.points || 0) < Number(pack.points_cost) ? 'Not enough points' : 'Buy and open pack'}</button>`}
+                            : `<button class="battlepass-pack-open" type="button" data-open-pack="${Number(selectedPack.id)}" ${Number(battlePassProfile?.points || 0) < Number(selectedPack.points_cost) ? 'disabled' : ''}>${Number(battlePassProfile?.points || 0) < Number(selectedPack.points_cost) ? 'Not enough points' : 'Buy and open pack'}</button>`}
                     </div>
                 </article>`;
-            }).join('') : '<p class="account-chart-empty">No reward packs are available yet.</p>';
+            container.innerHTML = `
+                <div class="battlepass-pack-layout">
+                    <div class="battlepass-pack-selector" role="listbox" aria-label="Reward packs">${selector}</div>
+                    ${detail}
+                </div>`;
             container.onclick = event => {
+                const selectorItem = event.target.closest('[data-select-pack]');
+                if (selectorItem) {
+                    battlePassSelectedPackId = Number(selectorItem.dataset.selectPack);
+                    renderBattlePassShop();
+                    return;
+                }
                 const button = event.target.closest('[data-open-pack]');
                 if (button && !button.disabled) openBattlePassPack(button);
             };
@@ -4209,6 +4252,9 @@ let connectedWallet = null;
 
         function isPermanentlyLockedCopyAccount(account) {
             return account?.status === 'PERMANENTLY_LOCKED' ||
+                account?.status === 'FAILED' ||
+                account?.status === 'MLL_FAILED' ||
+                account?.status === 'CLOSED' ||
                 account?.lock_reason === 'MLL' ||
                 Number(account?.permanent_lock) === 1;
         }
@@ -4255,6 +4301,8 @@ let connectedWallet = null;
                     selectElem.innerHTML = '<option value="">No Unlocked Accounts Available</option>';
                     const openList = document.getElementById('open-trades-list');
                     if (openList) openList.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 24px;">No unlocked accounts available.</td></tr>';
+                    displayedOpenTrades = [];
+                    renderChartTradeOverlays([]);
                     calculateMetrics();
                 } else {
                     let selectHtml = '';
@@ -4954,10 +5002,10 @@ let connectedWallet = null;
             const stats = [
                 {
                     label: 'Profit target',
-                    percentage: metrics.profitProgress,
+                    percentage: metrics.profitTargetPercent,
                     current: metrics.currentProfit,
                     target: metrics.profitTarget,
-                    detail: `Profit ${formatPerformanceMoney(metrics.currentProfit)} of ${formatPerformanceMoney(metrics.profitTarget)}`,
+                    detail: `Profit ${formatPerformanceMoney(metrics.currentProfit)} of ${formatPerformanceMoney(metrics.profitTarget)} · ${Number(metrics.profitProgress || 0).toFixed(1)}% earned`,
                     tone: 'profit'
                 },
                 {
@@ -5405,7 +5453,14 @@ let connectedWallet = null;
                                             <button class="btn-wallet" onclick="selectAccountAndTrade('${acc.id}')">Select in Terminal</button>
                                         </div>
                                     </div>
-                                    <div id="account-performance-${acc.id}" class="account-performance-header"></div>
+                                    <div id="account-performance-${acc.id}" class="account-performance-header">
+                                        <div id="profit-target-${acc.id}" class="account-profit-target">
+                                            <span>Profit target</span>
+                                            <strong>${Number(m.profitTargetPercent || 0).toFixed(1)}%</strong>
+                                            <small>Target: $${acc.profit_target.toLocaleString()}</small>
+                                        </div>
+                                        ${renderAccountProgressStats(m)}
+                                    </div>
                                     <div class="account-preview-grid">
                                         <div class="account-preview-stat dashboard-tile"><span>Initial capital</span><strong>$${acc.initial_balance.toLocaleString()}</strong></div>
                                         <div class="account-preview-stat dashboard-tile"><span>Current balance</span><strong id="bal-val-${acc.id}">$${acc.current_balance.toLocaleString()}</strong></div>
@@ -7782,6 +7837,14 @@ let connectedWallet = null;
 
         async function loadOpenTrades(accountId) {
             if (!accountId) return;
+            const selectedAccount = userAccounts.find(account => String(account.id) === String(accountId));
+            if (selectedAccount && isPermanentlyLockedCopyAccount(selectedAccount)) {
+                displayedOpenTrades = [];
+                renderChartTradeOverlays([]);
+                const tbody = document.getElementById('open-trades-list');
+                if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 24px;">No open positions for a failed or permanently locked account.</td></tr>';
+                return;
+            }
             const res = await walletFetch(`/api/trades/active?account_id=${encodeURIComponent(accountId)}&wallet=${encodeURIComponent(connectedWallet)}`);
             const data = await res.json();
             const tbody = document.getElementById('open-trades-list');

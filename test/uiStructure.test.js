@@ -275,7 +275,9 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
     assert.match(artworkSource, new RegExp(`${name.toLowerCase()}: \\{ src: '/images/battlepass/packs/${fileName}' \\}`));
   }
   assert.match(appCss, /\.battlepass-pack-graphic \{[^}]*background: #000;/);
-  assert.match(appCss, /\.battlepass-pack-card \{[^}]*grid-template-columns: minmax\(0, 1fr\); justify-items: center;/);
+  assert.match(appCss, /\.battlepass-pack-layout \{[^}]*grid-template-columns:/);
+  assert.match(appCss, /\.battlepass-pack-selector \{[^}]*display: flex;[^}]*overflow-x: auto;/);
+  assert.match(appCss, /\.battlepass-pack-detail-art \{[^}]*background: #000;/);
   assert.match(appCss, /\.battlepass-pack-art \{[^}]*position: absolute; inset: 0;[^}]*width: 100%; height: 100%; object-fit: contain; object-position: center center;/);
   assert.match(appCss, /\.battlepass-promotional-pack-card \{ display: grid; grid-template-columns: minmax\(0, 1fr\); justify-items: center;/);
   assert.doesNotMatch(appJs, /blastrr_reward_pack_sprite\.svg/);
@@ -301,6 +303,7 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
     battlePassPacks: packs,
     battlePassProfile: { points: 1000 },
     lastPackReveal: null,
+    battlePassSelectedPackId: null,
     document: { getElementById: id => elements[id] || null },
     escapeHTML: value => String(value),
     openBattlePassPack: button => { openedButton = button; }
@@ -313,7 +316,7 @@ test('Battle Pass pack cards render nine mapped PNG images and preserve the unkn
   }
   assert.ok(shop.innerHTML.includes('<span>✦</span><strong>Unknown Tier</strong>'));
   const clickedButton = { disabled: false };
-  shop.onclick({ target: { closest: () => clickedButton } });
+  shop.onclick({ target: { closest: selector => selector === '[data-open-pack]' ? clickedButton : null } });
   assert.equal(openedButton, clickedButton);
   const openHandlerStart = appJs.indexOf('async function openBattlePassPack(button)');
   const openHandlerEnd = appJs.indexOf('async function useBattlePassCertificate(', openHandlerStart);
@@ -805,6 +808,12 @@ test('account performance summaries include active and soft DLL-locked accounts 
   assert.match(appJs, /No active, unlocked accounts available to display/);
   assert.match(appJs, /function toggleMllAccounts\(show\)/);
   assert.match(appJs, /showPermanentlyLockedPortfolioAccounts && isMllAccount/);
+  assert.match(appJs, /account\?\.status === 'FAILED'/);
+  assert.match(appJs, /account\?\.status === 'MLL_FAILED'/);
+  assert.match(appJs, /account\?\.status === 'CLOSED'/);
+  assert.match(appJs, /displayedOpenTrades = \[\];[\s\S]*?renderChartTradeOverlays\(\[\]\)/);
+  assert.match(serverJs, /liveAccount\.status === 'FAILED'/);
+  assert.match(serverJs, /trades: failedAccount \? \[\] :/);
   assert.match(appJs, /async function loadTradeCopyGroups\(forceRefresh = false\)/);
   assert.match(appJs, /renderAccountOverviewContent\(account, assignment, copyGroupsAvailable\)/);
   assert.match(appJs, /class="copy-overview-balance"[\s\S]*?class="copy-overview-status"[\s\S]*?class="copy-overview-assignment"/);
